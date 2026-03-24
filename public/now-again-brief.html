@@ -1001,7 +1001,7 @@
     btn.disabled = true;
 
     try {
-      await saveBriefToSupabase({
+      const saved = await saveBriefToSupabase({
         brand,
         category: document.getElementById('category').value,
         markets: selectedMarkets,
@@ -1011,16 +1011,11 @@
         output_format: selectedOutput || 'Pulse report',
         status: 'pending'
       });
-
-      const details = document.getElementById('successDetails');
-      details.innerHTML = `
-        <div><span>Brand</span><span>${brand}</span></div>
-        <div><span>Markets</span><span>${selectedMarkets.length ? selectedMarkets.join(', ') : 'Global'}</span></div>
-        <div><span>Window</span><span>${selectedTime}</span></div>
-        <div><span>Output</span><span>${selectedOutput || 'Pulse report'}</span></div>
-        <div><span>Status</span><span style="color:#2d4a3e">Saved ✓</span></div>
-      `;
-      document.getElementById('successOverlay').classList.add('show');
+      const briefId = saved[0]?.id;
+      if (briefId) {
+        window.location.href = '/results/' + briefId;
+        return;
+      }
     } catch(err) {
       alert('Something went wrong saving your brief. Please try again.');
       console.error(err);
