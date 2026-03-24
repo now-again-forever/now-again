@@ -154,7 +154,7 @@ export default function SetupPage() {
       body: JSON.stringify({ briefId: id })
     }).catch(() => {});
 
-    window.location.href = `/collecting/${id}`;
+    window.location.href = `/results/${id}`;
   }
 
   useEffect(() => { fetchBrief(); }, [fetchBrief]);
