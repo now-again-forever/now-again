@@ -113,7 +113,7 @@ export default function ResultsPage() {
         pollRef.current = setInterval(async () => {
           setPollCount(c => c + 1);
           const s = await fetchBrief();
-          if (s === 'complete') {
+          if (s === "complete") { window.location.reload(); return;
             clearInterval(timerRef.current);
             clearInterval(pollRef.current);
           }
