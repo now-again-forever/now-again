@@ -25,6 +25,7 @@ interface QueryProposal {
   id: number;
   label: string;
   query: string;
+  language: string;
   selected: boolean;
   editable: boolean;
 }
@@ -121,19 +122,42 @@ export default function SetupPage() {
     setClusters(clusterList);
   }, []);
 
+  const [scoringStatus, setScoringStatus] = useState('');
+  const [translatedLanguages, setTranslatedLanguages] = useState<string[]>([]);
+
   async function generateQueries() {
     if (!brief) return;
     setGenerating(true);
     try {
       const selectedCats = clusters.filter(c => c.selected).map(c => c.category).join(', ');
+      const candidateUrls = clusters.filter(c => c.selected).flatMap(c => c.example_urls).slice(0, 150);
+
+      setScoringStatus('Scoring sources for relevance...');
       const res = await fetch('/api/generate-queries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brief, selectedCats })
+        body: JSON.stringify({ brief, selectedCats, candidateUrls })
       });
       const data = await res.json();
+
+      if (data.translatedLanguages?.length > 0) {
+        setScoringStatus(`Translated into ${data.translatedLanguages.join(', ')}`);
+        setTranslatedLanguages(data.translatedLanguages);
+      } else {
+        setScoringStatus('');
+      }
+
+      if (data.scoredUrls?.length > 0) {
+        setClusters(prev => prev.map(c => ({
+          ...c,
+          example_urls: data.scoredUrls.filter((u: string) => c.example_urls.includes(u))
+        })));
+      }
+
       setQueries((data.queries || []).map((q: any, i: number) => ({
-        id: i, label: q.label, query: q.query, selected: true, editable: false
+        id: i, label: q.label, query: q.query,
+        language: q.language || 'English',
+        selected: true, editable: false
       })));
       setStep('queries');
     } catch (e) {
@@ -251,7 +275,7 @@ export default function SetupPage() {
               </div>
               <div style={s.actionRow}>
                 <button style={s.btnPrimary} onClick={generateQueries} disabled={generating || selectedCount === 0}>
-                  {generating ? 'Generating queries...' : `Continue →`}
+                  {generating ? (scoringStatus || 'Scoring sources...') : `Continue →`}
                 </button>
                 <p style={s.actionNote}>{totalSources.toLocaleString()} sources · {selectedCount} clusters selected</p>
               </div>
@@ -264,11 +288,21 @@ export default function SetupPage() {
                 <h1 style={s.mainTitle}>Review your <em style={{ fontStyle: 'italic', color: '#c8b89a' }}>queries</em></h1>
                 <p style={s.mainSub}>Claude has generated these Boolean search queries. Edit, remove, or add your own.</p>
               </div>
+              {translatedLanguages.length > 0 && (
+                <div style={{ background: '#EEEDFE', border: '1px solid #AFA9EC', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', color: '#3C3489' }}>
+                  Queries have been translated into {translatedLanguages.join(' and ')} to capture local conversations in your target markets.
+                </div>
+              )}
               <div style={s.queryList}>
                 {queries.map((q, i) => (
                   <div key={i} style={{ ...s.queryCard, opacity: q.selected ? 1 : 0.4 }}>
                     <div style={s.queryTop}>
-                      <div style={s.queryLabel}>{q.label}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={s.queryLabel}>{q.label}</div>
+                        {q.language && q.language !== 'English' && (
+                          <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '100px', background: '#EEEDFE', color: '#3C3489', fontWeight: 500 }}>{q.language}</span>
+                        )}
+                      </div>
                       <button style={s.queryToggle} onClick={() => { const next = [...queries]; next[i].selected = !next[i].selected; setQueries(next); }}>
                         {q.selected ? 'Remove' : 'Add back'}
                       </button>
