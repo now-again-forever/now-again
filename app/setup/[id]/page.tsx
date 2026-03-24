@@ -84,7 +84,14 @@ export default function SetupPage() {
   }
 
   const fetchSources = useCallback(async (b: Brief) => {
-    const markets = (b.markets || []);
+    const MARKET_MAP: Record<string, string> = {
+      'UK': 'UK', 'FR': 'France', 'ES': 'Spain', 'DE': 'Germany',
+      'PL': 'Poland', 'TR': 'Turkey', 'US': 'USA', 'Global': 'Global English',
+      'France': 'France', 'Spain': 'Spain', 'Germany': 'Germany',
+      'Poland': 'Poland', 'Turkey': 'Turkey', 'USA': 'USA',
+      'Italy': 'Italy', 'Netherlands': 'Netherlands', 'Sweden': 'Sweden',
+    };
+    const markets = (b.markets || []).map((m: string) => MARKET_MAP[m] || m);
     if (markets.length === 0) return;
 
     const marketList = markets.map((m: string) => `"${m}"`).join(',');
@@ -154,7 +161,7 @@ export default function SetupPage() {
       body: JSON.stringify({ briefId: id })
     }).catch(() => {});
 
-    window.location.href = `/results/${id}`;
+    window.location.href = `/collecting/${id}`;
   }
 
   useEffect(() => { fetchBrief(); }, [fetchBrief]);
