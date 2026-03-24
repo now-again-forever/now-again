@@ -969,7 +969,25 @@
     updateProgress();
   }
 
-  function submitBrief() {
+  const SUPABASE_URL = 'https://emibznnqnuxztkdaanhb.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_k0bYncD0UNP2a_XCqiVksA_cbPBFlVC';
+
+  async function saveBriefToSupabase(brief) {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/briefs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(brief)
+    });
+    if (!response.ok) throw new Error('Failed to save brief');
+    return await response.json();
+  }
+
+  async function submitBrief() {
     const brand = document.getElementById('brand').value;
     const question = document.getElementById('question').value;
 
@@ -978,16 +996,38 @@
       return;
     }
 
-    const details = document.getElementById('successDetails');
-    details.innerHTML = `
-      <div><span>Brand</span><span>${brand}</span></div>
-      <div><span>Markets</span><span>${selectedMarkets.length ? selectedMarkets.join(', ') : 'Global'}</span></div>
-      <div><span>Window</span><span>${selectedTime}</span></div>
-      <div><span>Output</span><span>${selectedOutput || 'Pulse report'}</span></div>
-      <div><span>Status</span><span style="color:#2d4a3e">Processing...</span></div>
-    `;
+    const btn = document.querySelector('.btn-submit');
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
 
-    document.getElementById('successOverlay').classList.add('show');
+    try {
+      await saveBriefToSupabase({
+        brand,
+        category: document.getElementById('category').value,
+        markets: selectedMarkets,
+        time_window: selectedTime,
+        challenge_type: selectedChallenge,
+        question,
+        output_format: selectedOutput || 'Pulse report',
+        status: 'pending'
+      });
+
+      const details = document.getElementById('successDetails');
+      details.innerHTML = `
+        <div><span>Brand</span><span>${brand}</span></div>
+        <div><span>Markets</span><span>${selectedMarkets.length ? selectedMarkets.join(', ') : 'Global'}</span></div>
+        <div><span>Window</span><span>${selectedTime}</span></div>
+        <div><span>Output</span><span>${selectedOutput || 'Pulse report'}</span></div>
+        <div><span>Status</span><span style="color:#2d4a3e">Saved ✓</span></div>
+      `;
+      document.getElementById('successOverlay').classList.add('show');
+    } catch(err) {
+      alert('Something went wrong saving your brief. Please try again.');
+      console.error(err);
+    } finally {
+      btn.textContent = 'Generate insights →';
+      btn.disabled = false;
+    }
   }
 
   function saveDraft() {
