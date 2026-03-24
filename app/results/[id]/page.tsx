@@ -58,8 +58,8 @@ export default function ResultsPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [failed, setFailed] = useState(false);
   const startTime = useRef(Date.now());
-  const timerRef = useRef<NodeJS.Timeout>();
-  const pollRef = useRef<NodeJS.Timeout>();
+  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const pollRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const fetchBrief = useCallback(async () => {
     try {
