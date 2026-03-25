@@ -24,6 +24,44 @@ interface Brief {
   post_count: number;
 }
 
+import React from 'react';
+
+const ANALYSIS_STEPS = [
+  'Reading your collected conversations...',
+  'Identifying cultural signals...',
+  'Clustering themes and patterns...',
+  'Scoring human drivers...',
+  'Writing strategic implications...',
+  'Almost there...',
+];
+
+function GeneratingSteps() {
+  const [step, setStep] = React.useState(0);
+  const [elapsed, setElapsed] = React.useState(0);
+  React.useEffect(() => {
+    const timer = setInterval(() => setStep(s => Math.min(s + 1, ANALYSIS_STEPS.length - 1)), 6000);
+    const ticker = setInterval(() => setElapsed(s => s + 1), 1000);
+    return () => { clearInterval(timer); clearInterval(ticker); };
+  }, []);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '2rem', maxWidth: '420px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <svg width="44" height="44" viewBox="0 0 44 44" style={{ animation: 'spin 2s linear infinite', flexShrink: 0 }}>
+          <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="2"/>
+          <circle cx="22" cy="22" r="18" fill="none" stroke="#2d4a3e" strokeWidth="2" strokeDasharray="28 90" strokeLinecap="round"/>
+        </svg>
+        <div>
+          <div style={{ fontSize: '0.875rem', color: '#f5f3ee', fontWeight: 500, marginBottom: '3px' }}>{ANALYSIS_STEPS[step]}</div>
+          <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>{elapsed}s — usually 20–40 seconds</div>
+        </div>
+      </div>
+      <div style={{ height: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 1 }}>
+        <div style={{ height: '100%', background: '#2d4a3e', borderRadius: 1, width: `${Math.min((step / (ANALYSIS_STEPS.length - 1)) * 100, 95)}%`, transition: 'width 1s ease' }}/>
+      </div>
+    </div>
+  );
+}
+
 export default function CollectingPage() {
   const params = useParams();
   const id = params.id as string;
@@ -178,10 +216,18 @@ export default function CollectingPage() {
                   setGenerating(false);
                 }
               }}>
-                {generating ? 'Analysing conversations...' : 'Generate insights →'}
+                {generating ? 'Analysing...' : 'Generate insights →'}
               </button>
             </div>
-          ) : (
+          )}
+
+          {generating && (
+            <div style={{ marginTop: '2rem', maxWidth: '400px' }}>
+              <GeneratingSteps />
+            </div>
+          )}
+
+          {!generating && isComplete ? null : (
             <>
               <div style={s.statusSection}>
                 <div style={s.bigTimer}>
