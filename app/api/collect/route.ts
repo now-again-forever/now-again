@@ -81,11 +81,22 @@ async function scrapePage(url: string, country: string, category: string): Promi
 
 // ── 2a. HACKER NEWS ──
 function simplifyQuery(query: string): string {
-  // Extract quoted phrases and key nouns, strip Boolean operators
-  const quoted = (query.match(/"([^"]+)"/g) || []).map(s => s.replace(/"/g,''));
-  const words = query.replace(/"[^"]+"/g, '').replace(/\(|\)|AND|OR|NOT|NEAR\/\d+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(w => w.length > 4).slice(0, 4);
-  const terms = [...new Set([...quoted.slice(0,2), ...words])].slice(0, 5);
-  return terms.join(' ');
+  // If query is already short and readable (a label), use it directly
+  if (query.length < 60 && !query.includes('(') && !query.includes(' OR ') && !query.includes(' AND ')) {
+    return query;
+  }
+  // Extract quoted phrases first - these are the most meaningful terms
+  const quoted = (query.match(/"([^"]+)"/g) || []).map((s: string) => s.replace(/"/g, ''));
+  if (quoted.length > 0) return quoted.slice(0, 3).join(' ');
+  // Fall back to stripping operators and taking meaningful words
+  const words = query
+    .replace(/\b(AND|OR|NOT|NEAR|lang|source[a-z]*|wordcount|sample)\b[^\s]*/gi, ' ')
+    .replace(/[()\[\]+]/g, ' ')
+    .replace(/\s+/g, ' ').trim()
+    .split(' ')
+    .filter((w: string) => w.length > 4 && !w.includes(':'))
+    .slice(0, 5);
+  return words.join(' ');
 }
 
 async function fetchHN(query: string, label: string): Promise<Post[]> {
@@ -340,10 +351,12 @@ export async function POST(req: NextRequest) {
 
     for (const q of allQueryInputs) {
       const lang = MARKET_TO_LANG[markets[0]] || 'en';
+      // Use label for social search (readable), boolean query for news (supports operators)
+      const socialQuery = q.label || q.query;
       const [hn, bsky, masto] = await Promise.all([
-        fetchHN(q.query, q.label),
-        fetchBluesky(q.query, q.label, lang),
-        fetchMastodon(q.query, q.label)
+        fetchHN(socialQuery, q.label),
+        fetchBluesky(socialQuery, q.label, lang),
+        fetchMastodon(socialQuery, q.label)
       ]);
       allPosts = [...allPosts, ...hn, ...bsky, ...masto];
       if (hn.length + bsky.length + masto.length > 0) {
