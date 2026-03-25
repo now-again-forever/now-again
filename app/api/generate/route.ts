@@ -82,12 +82,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Build numbered post list with sources for citation
-    const numberedPosts = posts.slice(0, 60).map((p, i) => {
+    const cleanText = (t: string) => t
+      .replace(/&[a-z#0-9]+;/gi, ' ')
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/["""'']/g, '"')
+      .trim()
+      .slice(0, 300);
+
+    const numberedPosts = posts.slice(0, 50).map((p, i) => {
       if (typeof p === 'object' && p !== null) {
         const post = p as any;
-        return `[${i+1}] [${post.source}|${post.country}|${post.timestamp?.slice(0,10)||''}] ${post.text}`;
+        return `[${i+1}] [${post.source}|${post.country}|${post.timestamp?.slice(0,10)||''}] ${cleanText(post.text)}`;
       }
-      return `[${i+1}] ${p}`;
+      return `[${i+1}] ${cleanText(String(p))}`;
     });
 
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -137,15 +146,22 @@ Return ONLY valid JSON, no markdown:
     const raw = claudeData.content?.[0]?.text || '';
     console.log('Claude preview:', raw.slice(0, 200));
 
-    // Robust JSON extraction - find the JSON object even if there's extra text
+    // Robust JSON extraction
     let results;
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found in response');
-    const cleaned = jsonMatch[0]
-      .replace(/[\x00-\x1F\x7F]/g, ' ')  // strip control chars
-      .replace(/\n/g, ' ')
-      .trim();
-    results = JSON.parse(cleaned);
+    let jsonStr = raw.replace(/```json|```/g, '').trim();
+    // Find outermost { } by counting braces
+    const start = jsonStr.indexOf('{');
+    if (start === -1) throw new Error('No JSON found');
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < jsonStr.length; i++) {
+      if (jsonStr[i] === '{') depth++;
+      else if (jsonStr[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end === -1) throw new Error('Malformed JSON');
+    jsonStr = jsonStr.slice(start, end + 1)
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ');
+    results = JSON.parse(jsonStr);
     results.data_source = dataSource;
     results.post_count = posts.length;
 
