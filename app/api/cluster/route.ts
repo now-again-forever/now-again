@@ -60,30 +60,20 @@ export async function POST(req: NextRequest) {
     // Step 2: Sample up to 200 posts for clustering (best quality)
     const sample = scoredPosts
       .sort((a, b) => b._relevance - a._relevance)
-      .slice(0, 200);
+      .slice(0, 80);
 
     // Step 3: Ask Claude to cluster into 20-30 themes
     const postList = sample.map((p, i) => `[${i + 1}] ${cleanText(p.text)}`).join('\n');
 
-    const clusterPrompt = `You are a cultural insight researcher analysing online conversations.
+    const clusterPrompt = `Analyse these ${sample.length} online posts about "${brief.question}" for ${brief.brand}.
 
-Brief: "${brief.question}"
-Brand: ${brief.brand}
-Category: ${brief.category}
-
-Here are ${sample.length} online posts collected for this project:
+Posts:
 ${postList}
 
-Group these posts into 20-30 distinct semantic themes. Each theme should be:
-- Named with 2-4 evocative words (like "Nostalgic Authenticity" or "Political Consumption")
-- Grounded in what multiple posts actually say — not invented
-- Listed with the post numbers that belong to it
-- Given a 1-sentence description
+Group into 15-20 named themes. Return ONLY JSON:
+{"clusters":[{"name":"2-4 word theme name","description":"one sentence","postIndices":[1,4,7],"count":3}]}
 
-Sort themes from most to least frequent (most posts = top).
-
-Return ONLY valid JSON:
-{"clusters":[{"name":"Theme Name","description":"One sentence about what this theme captures","postIndices":[1,4,7,12],"count":4},...]}`;
+Sort by frequency descending.`;
 
     const raw = await callClaude(clusterPrompt, 4000);
     console.log('Cluster response preview:', raw.slice(0, 200));

@@ -1,1 +1,7 @@
-{"functions": {"app/api/generate/route.ts": {"maxDuration": 60}}}
+{
+  "functions": {
+    "app/api/generate/route.ts": {"maxDuration": 60},
+    "app/api/cluster/route.ts": {"maxDuration": 60},
+    "app/api/collect/route.ts": {"maxDuration": 60}
+  }
+}
