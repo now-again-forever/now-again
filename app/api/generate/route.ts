@@ -137,7 +137,15 @@ Return ONLY valid JSON, no markdown:
     const raw = claudeData.content?.[0]?.text || '';
     console.log('Claude preview:', raw.slice(0, 200));
 
-    const results = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    // Robust JSON extraction - find the JSON object even if there's extra text
+    let results;
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in response');
+    const cleaned = jsonMatch[0]
+      .replace(/[\x00-\x1F\x7F]/g, ' ')  // strip control chars
+      .replace(/\n/g, ' ')
+      .trim();
+    results = JSON.parse(cleaned);
     results.data_source = dataSource;
     results.post_count = posts.length;
 

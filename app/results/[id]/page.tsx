@@ -58,8 +58,8 @@ export default function ResultsPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [failed, setFailed] = useState(false);
   const startTime = useRef(Date.now());
-  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const pollRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const timerRef = useRef<NodeJS.Timeout>();
+  const pollRef = useRef<NodeJS.Timeout>();
 
   const fetchBrief = useCallback(async () => {
     try {
@@ -98,7 +98,7 @@ export default function ResultsPage() {
 
     const init = async () => {
       const status = await fetchBrief();
-      if (status === 'pending') {
+      if (status === 'pending' || status === 'collected') {
         startTime.current = Date.now();
         triggerGeneration();
 
@@ -113,7 +113,7 @@ export default function ResultsPage() {
         pollRef.current = setInterval(async () => {
           setPollCount(c => c + 1);
           const s = await fetchBrief();
-          if (s === "complete") { window.location.reload(); return;
+          if (s === 'complete') {
             clearInterval(timerRef.current);
             clearInterval(pollRef.current);
           }
