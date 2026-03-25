@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -52,94 +52,70 @@ export default function ResultsPage() {
   const [brief, setBrief] = useState<Brief | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTheme, setActiveTheme] = useState(0);
-  const [pollCount, setPollCount] = useState(0);
-  const [triggered, setTriggered] = useState(false);
-  const triggeredRef = useRef(false);
   const [elapsed, setElapsed] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [failed, setFailed] = useState(false);
   const startTime = useRef(Date.now());
-  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const pollRef = useRef<NodeJS.Timeout | undefined>(undefined);
-
-  const fetchBrief = useCallback(async () => {
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=*`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-      });
-      const data = await res.json();
-      if (data[0]) {
-        setBrief(data[0]);
-        return data[0].status;
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-    return 'pending';
-  }, [id]);
-
-  const triggerGeneration = useCallback(async () => {
-    if (triggeredRef.current) return;
-    triggeredRef.current = true;
-    setTriggered(true);
-    try {
-      await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ briefId: id })
-      });
-    } catch (e) {
-      console.error('Trigger error:', e);
-    }
-  }, [id, triggered]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const didTrigger = useRef(false);
 
   useEffect(() => {
     if (!id) return;
 
-    const init = async () => {
-      const status = await fetchBrief();
-      if (status === 'pending' || status === 'collected') {
-        startTime.current = Date.now();
+    const run = async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=*`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        const data = await res.json();
+        const brief = data[0];
+        if (!brief) { setLoading(false); return; }
+        setBrief(brief);
+        setLoading(false);
 
-        // Trigger generation directly — no state guards, just a ref
-        if (!triggeredRef.current) {
-          triggeredRef.current = true;
-          setTriggered(true);
+        if (brief.status === 'complete') return;
+
+        if ((brief.status === 'pending' || brief.status === 'collected') && !didTrigger.current) {
+          didTrigger.current = true;
+          startTime.current = Date.now();
           fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ briefId: id })
           }).catch(console.error);
+
+          timerRef.current = setInterval(() => {
+            const secs = Math.floor((Date.now() - startTime.current) / 1000);
+            setElapsed(secs);
+            setCurrentStep(Math.min(Math.floor(secs / 7), STEPS.length - 1));
+            if (secs > 180) setFailed(true);
+          }, 1000);
+
+          pollRef.current = setInterval(async () => {
+            const r = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=status`, {
+              headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            const d = await r.json();
+            if (d[0]?.status === 'complete') {
+              clearInterval(timerRef.current);
+              clearInterval(pollRef.current);
+              window.location.reload();
+            }
+          }, 3000);
         }
-
-        timerRef.current = setInterval(() => {
-          const secs = Math.floor((Date.now() - startTime.current) / 1000);
-          setElapsed(secs);
-          const stepIndex = Math.min(Math.floor(secs / 7), STEPS.length - 1);
-          setCurrentStep(stepIndex);
-          if (secs > 120) setFailed(true);
-        }, 1000);
-
-        pollRef.current = setInterval(async () => {
-          setPollCount(c => c + 1);
-          const s = await fetchBrief();
-          if (s === 'complete') {
-            clearInterval(timerRef.current);
-            clearInterval(pollRef.current);
-            window.location.reload();
-          }
-        }, 3000);
+      } catch (e) {
+        console.error(e);
+        setLoading(false);
       }
     };
 
-    init();
+    run();
     return () => {
       clearInterval(timerRef.current);
       clearInterval(pollRef.current);
     };
-  }, [id, fetchBrief]);
+  }, [id]);
 
   if (loading) return (
     <div style={s.centred}>
