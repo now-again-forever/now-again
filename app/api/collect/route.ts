@@ -17,101 +17,68 @@ interface Post {
 async function updateBrief(id: string, patch: object) {
   await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`
-    },
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
     body: JSON.stringify(patch)
   });
 }
 
-// ── FETCH RSS FROM A SINGLE URL ──
-async function fetchRSS(url: string, country: string, category: string): Promise<Post[]> {
+// ── RSS via rss2json proxy (free, handles CORS + fetching) ──
+async function fetchRSSViaProxy(siteUrl: string, country: string, category: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
-    // Try common RSS paths
-    const rssUrls = [
-      url.endsWith('/') ? `${url}feed` : `${url}/feed`,
-      url.endsWith('/') ? `${url}rss` : `${url}/rss`,
-      url.endsWith('/') ? `${url}feed.xml` : `${url}/feed.xml`,
-      url.endsWith('/') ? `${url}rss.xml` : `${url}/rss.xml`,
-    ];
+    const feedUrl = siteUrl.endsWith('/') ? `${siteUrl}feed` : `${siteUrl}/feed`;
+    const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=8`;
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return posts;
+    const data = await res.json();
+    if (data.status !== 'ok' || !data.items?.length) return posts;
 
-    for (const rssUrl of rssUrls) {
-      try {
-        const res = await fetch(rssUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NowAgain/1.0; +https://now-again-xi.vercel.app)' },
-          signal: AbortSignal.timeout(6000)
+    const sourceName = new URL(siteUrl).hostname.replace('www.', '');
+    for (const item of data.items.slice(0, 5)) {
+      const title = item.title?.trim() || '';
+      const desc = (item.description || item.content || '')
+        .replace(/<[^>]+>/g, '').trim().slice(0, 400);
+      if (title.length > 10) {
+        posts.push({
+          text: desc ? `${title}. ${desc}` : title,
+          source: sourceName,
+          url: item.link || siteUrl,
+          country,
+          category,
+          timestamp: item.pubDate || new Date().toISOString(),
+          type: 'rss'
         });
-        if (!res.ok) continue;
-        const xml = await res.text();
-        if (!xml.includes('<item') && !xml.includes('<entry')) continue;
-
-        // Parse RSS items
-        const items = xml.match(/<item[^>]*>[\s\S]*?<\/item>/gi) ||
-                      xml.match(/<entry[^>]*>[\s\S]*?<\/entry>/gi) || [];
-
-        for (const item of items.slice(0, 5)) {
-          const title = item.match(/<title[^>]*><!\[CDATA\[(.*?)\]\]><\/title>|<title[^>]*>(.*?)<\/title>/i);
-          const desc = item.match(/<description[^>]*><!\[CDATA\[(.*?)\]\]><\/description>|<description[^>]*>(.*?)<\/description>|<summary[^>]*>(.*?)<\/summary>/i);
-          const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>|<published>(.*?)<\/published>|<updated>(.*?)<\/updated>/i);
-          const link = item.match(/<link[^>]*href="([^"]+)"|<link[^>]*>(.*?)<\/link>/i);
-
-          const titleText = (title?.[1] || title?.[2] || '').replace(/<[^>]+>/g, '').trim();
-          const descText = (desc?.[1] || desc?.[2] || desc?.[3] || '').replace(/<[^>]+>/g, '').trim().slice(0, 400);
-          const dateText = pubDate?.[1] || pubDate?.[2] || pubDate?.[3] || new Date().toISOString();
-          const linkText = link?.[1] || link?.[2] || rssUrl;
-
-          if (titleText.length > 10) {
-            posts.push({
-              text: descText ? `${titleText}. ${descText}` : titleText,
-              source: new URL(url).hostname.replace('www.', ''),
-              url: linkText,
-              country,
-              category,
-              timestamp: dateText,
-              type: 'rss'
-            });
-          }
-        }
-
-        if (posts.length > 0) break; // Found RSS, stop trying other paths
-      } catch { continue; }
+      }
     }
-  } catch (e) {
-    console.error(`RSS error for ${url}:`, e);
-  }
+  } catch (e) { /* silent fail per source */ }
   return posts;
 }
 
-// ── FETCH FROM HACKER NEWS ──
+// ── HN ──
 async function fetchHN(query: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
     const res = await fetch(
-      `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=20`,
+      `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=25`,
       { signal: AbortSignal.timeout(6000) }
     );
     const data = await res.json();
     for (const hit of data.hits || []) {
-      if (hit.title) {
-        posts.push({
-          text: hit.story_text ? `${hit.title}. ${hit.story_text.slice(0, 300)}` : hit.title,
-          source: 'Hacker News',
-          url: hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`,
-          country: 'Global',
-          category: 'Technology & culture',
-          timestamp: hit.created_at || new Date().toISOString(),
-          type: 'hn'
-        });
-      }
+      if (hit.title) posts.push({
+        text: hit.story_text ? `${hit.title}. ${hit.story_text.slice(0, 300)}` : hit.title,
+        source: 'Hacker News',
+        url: hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`,
+        country: 'Global',
+        category: 'Technology & culture',
+        timestamp: hit.created_at || new Date().toISOString(),
+        type: 'hn'
+      });
     }
   } catch (e) { console.error('HN:', e); }
   return posts;
 }
 
-// ── FETCH FROM BLUESKY ──
+// ── Bluesky ──
 async function fetchBluesky(query: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
@@ -124,51 +91,54 @@ async function fetchBluesky(query: string): Promise<Post[]> {
     if (!text.startsWith('{')) return posts;
     const data = JSON.parse(text);
     for (const post of data.posts || []) {
-      if (post.record?.text?.length > 20) {
-        posts.push({
-          text: post.record.text,
-          source: 'Bluesky',
-          url: `https://bsky.app/profile/${post.author?.handle}`,
-          country: 'Global',
-          category: 'Social media',
-          timestamp: post.indexedAt || new Date().toISOString(),
-          type: 'bluesky'
-        });
-      }
+      if (post.record?.text?.length > 20) posts.push({
+        text: post.record.text,
+        source: 'Bluesky',
+        url: `https://bsky.app/profile/${post.author?.handle}`,
+        country: 'Global',
+        category: 'Social media',
+        timestamp: post.indexedAt || new Date().toISOString(),
+        type: 'bluesky'
+      });
     }
   } catch (e) { console.error('Bluesky:', e); }
   return posts;
 }
 
-// ── FETCH GOOGLE TRENDS ──
-async function fetchGoogleTrends(keyword: string, country: string): Promise<Post[]> {
+// ── NewsData.io (free tier — 200 requests/day) ──
+async function fetchNewsData(query: string, markets: string[]): Promise<Post[]> {
   const posts: Post[] = [];
   try {
-    const geo = country === 'UK' ? 'GB' : country === 'USA' ? 'US' : country.slice(0, 2).toUpperCase();
-    const res = await fetch(
-      `https://trends.google.com/trends/api/explore?hl=en-US&tz=-60&req={"comparisonItem":[{"keyword":"${encodeURIComponent(keyword)}","geo":"${geo}","time":"today 3-m"}],"category":0,"property":""}`,
-      { signal: AbortSignal.timeout(8000) }
-    );
-    const text = await res.text();
-    const clean = text.replace(/^\)\]\}'/, '');
-    const data = JSON.parse(clean);
-    const value = data?.default?.widgets?.[0]?.request?.restriction?.complexKeywordsRestriction?.keyword?.[0]?.value;
-    if (value) {
-      posts.push({
-        text: `Google Trends signal: "${value}" is trending in ${country} — search interest has been rising over the past 3 months`,
-        source: 'Google Trends',
-        url: `https://trends.google.com/trends/explore?q=${encodeURIComponent(keyword)}&geo=${geo}`,
-        country,
-        category: 'Search trends',
-        timestamp: new Date().toISOString(),
-        type: 'trends'
+    const COUNTRY_MAP: Record<string, string> = {
+      'UK': 'gb', 'USA': 'us', 'US': 'us', 'France': 'fr', 'FR': 'fr',
+      'Spain': 'es', 'ES': 'es', 'Germany': 'de', 'DE': 'de',
+      'Poland': 'pl', 'PL': 'pl', 'Turkey': 'tr', 'TR': 'tr',
+      'Italy': 'it', 'Netherlands': 'nl'
+    };
+    const countryCodes = markets.map(m => COUNTRY_MAP[m]).filter(Boolean).slice(0, 3).join(',');
+    const simpleQuery = query.replace(/\(|\)|AND|OR|NOT|NEAR\/\d+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 4).join(' ');
+
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWSDATA_API_KEY}&q=${encodeURIComponent(simpleQuery)}&language=en${countryCodes ? `&country=${countryCodes}` : ''}&size=10`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return posts;
+    const data = await res.json();
+
+    for (const article of data.results || []) {
+      if (article.title) posts.push({
+        text: article.description ? `${article.title}. ${article.description.slice(0, 300)}` : article.title,
+        source: article.source_id || 'News',
+        url: article.link || '',
+        country: article.country?.[0]?.toUpperCase() || 'Global',
+        category: 'News',
+        timestamp: article.pubDate || new Date().toISOString(),
+        type: 'news'
       });
     }
-  } catch (e) { console.error('Trends:', e); }
+  } catch (e) { console.error('NewsData:', e); }
   return posts;
 }
 
-// ── SEND EMAIL ──
+// ── Send email ──
 async function sendEmail(brief: any, postCount: number) {
   if (!RESEND_KEY || !brief.client_email) return;
   try {
@@ -180,14 +150,9 @@ async function sendEmail(brief: any, postCount: number) {
         to: brief.client_email,
         subject: `Your ${brief.brand} brief is ready — ${postCount} conversations collected`,
         html: `<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:40px 20px">
-          <h1 style="font-size:28px;font-weight:400;color:#0e0d0b">Data collection complete.</h1>
-          <p style="color:#666;line-height:1.7">NOW-AGAIN has finished collecting conversations for your <strong>${brief.brand}</strong> brief.</p>
-          <p style="color:#999;font-style:italic;line-height:1.7">"${brief.question}"</p>
-          <ul style="color:#666;line-height:2">
-            <li>${postCount} conversations collected</li>
-            <li>${(brief.selected_clusters||[]).length} source clusters scanned</li>
-            <li>${(brief.markets||[]).join(', ')} markets</li>
-          </ul>
+          <h1 style="font-size:28px;font-weight:400">Data collection complete.</h1>
+          <p style="color:#666;line-height:1.7">NOW-AGAIN collected <strong>${postCount} conversations</strong> for your <strong>${brief.brand}</strong> brief.</p>
+          <p style="color:#999;font-style:italic">"${brief.question}"</p>
           <a href="https://now-again-xi.vercel.app/collecting/${brief.id}"
              style="display:inline-block;background:#0e0d0b;color:#f5f3ee;padding:14px 28px;border-radius:6px;text-decoration:none;font-family:sans-serif;font-size:14px;margin-top:16px">
             View results →
@@ -198,7 +163,6 @@ async function sendEmail(brief: any, postCount: number) {
   } catch (e) { console.error('Email:', e); }
 }
 
-// ── MAIN HANDLER ──
 export async function POST(req: NextRequest) {
   let briefId = '';
   try {
@@ -220,47 +184,44 @@ export async function POST(req: NextRequest) {
     };
     const dbMarkets = markets.map((m: string) => MARKET_MAP[m] || m);
 
-    // Initialise progress
     await updateBrief(briefId, {
       status: 'collecting',
-      collection_progress: {
-        total_posts: 0, sources_scraped: 0, sources_total: 0,
-        log: [`Starting collection for ${brief.brand}...`]
-      }
+      collection_progress: { total_posts: 0, sources_scraped: 0, sources_total: 0, log: [`Starting collection for ${brief.brand}...`] }
     });
 
     let allPosts: Post[] = [];
     let log: string[] = [`Starting collection for ${brief.brand}...`];
     let sourcesScraped = 0;
 
-    // ── STEP 1: RSS from curated sources ──
+    // ── STEP 1: RSS from curated sources via rss2json proxy ──
     if (clusters.length > 0 && dbMarkets.length > 0) {
       const catList = clusters.map((c: string) => `"${c}"`).join(',');
       const mktList = dbMarkets.map((m: string) => `"${m}"`).join(',');
 
       const sourcesRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/sources?country=in.(${mktList})&category=in.(${catList})&select=url,country,category&limit=200`,
+        `${SUPABASE_URL}/rest/v1/sources?country=in.(${mktList})&category=in.(${catList})&select=url,country,category&limit=60`,
         { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
       );
       const sources = await sourcesRes.json();
+      log = [...log, `Scanning ${sources.length} curated sources...`];
 
-      log = [...log, `Found ${sources.length} curated sources to scan`];
       await updateBrief(briefId, {
         collection_progress: { total_posts: 0, sources_scraped: 0, sources_total: sources.length + queries.length * 2, log }
       });
 
-      // Fetch RSS in batches of 10 concurrently
-      for (let i = 0; i < Math.min(sources.length, 100); i += 10) {
-        const batch = sources.slice(i, i + 10);
+      // Batch of 5 concurrent RSS fetches
+      for (let i = 0; i < Math.min(sources.length, 60); i += 5) {
+        const batch = sources.slice(i, i + 5);
         const results = await Promise.all(
-          batch.map((s: any) => fetchRSS(s.url, s.country, s.category))
+          batch.map((s: any) => fetchRSSViaProxy(s.url, s.country, s.category))
         );
         const batchPosts = results.flat();
         allPosts = [...allPosts, ...batchPosts];
         sourcesScraped += batch.length;
 
         if (batchPosts.length > 0) {
-          log = [...log, `RSS batch ${Math.floor(i/10)+1}: +${batchPosts.length} posts from ${batch.map((s:any) => new URL(s.url).hostname.replace('www.','')).slice(0,3).join(', ')}`];
+          const sourceNames = batchPosts.slice(0, 3).map(p => p.source).join(', ');
+          log = [...log, `+${batchPosts.length} posts from ${sourceNames}`];
         }
 
         await updateBrief(briefId, {
@@ -268,51 +229,46 @@ export async function POST(req: NextRequest) {
             total_posts: allPosts.length,
             sources_scraped: sourcesScraped,
             sources_total: sources.length + queries.length * 2,
-            log: log.slice(-20)
+            log: log.slice(-15)
           }
         });
       }
     }
 
-    // ── STEP 2: HN + Bluesky for each query ──
-    for (const q of queries) {
-      log = [...log, `Searching HN + Bluesky: "${q.label}"`];
-      const [hnPosts, bskyPosts] = await Promise.all([
+    // ── STEP 2: HN + Bluesky + NewsData per query ──
+    for (const q of queries.slice(0, 3)) {
+      log = [...log, `Searching: "${q.label}"`];
+      const [hnPosts, bskyPosts, newsPosts] = await Promise.all([
         fetchHN(q.query),
-        fetchBluesky(q.query)
+        fetchBluesky(q.query),
+        fetchNewsData(q.query, markets)
       ]);
-      allPosts = [...allPosts, ...hnPosts, ...bskyPosts];
-      sourcesScraped += 2;
+      allPosts = [...allPosts, ...hnPosts, ...bskyPosts, ...newsPosts];
+      sourcesScraped += 3;
+      log = [...log, `+${hnPosts.length + bskyPosts.length + newsPosts.length} posts (HN + Bluesky + News)`];
 
       await updateBrief(briefId, {
         collection_progress: {
           total_posts: allPosts.length,
           sources_scraped: sourcesScraped,
           sources_total: sourcesScraped,
-          log: [...log, `+${hnPosts.length + bskyPosts.length} posts`].slice(-20)
+          log: log.slice(-15)
         }
       });
-    }
-
-    // ── STEP 3: Google Trends for top keywords ──
-    const mainKeyword = (brief.category || '').split(' ').slice(0, 2).join(' ');
-    for (const market of markets.slice(0, 2)) {
-      const trendPosts = await fetchGoogleTrends(mainKeyword, market);
-      allPosts = [...allPosts, ...trendPosts];
     }
 
     // Deduplicate
     const seen = new Set<string>();
     const uniquePosts = allPosts.filter(p => {
-      const key = p.text.slice(0, 100);
+      const key = p.text.slice(0, 80);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
-    log = [...log, `Collection complete — ${uniquePosts.length} unique posts from ${new Set(uniquePosts.map(p => p.source)).size} sources`];
+    const sourceCount = new Set(uniquePosts.map(p => p.source)).size;
+    log = [...log, `Done — ${uniquePosts.length} posts from ${sourceCount} sources`];
 
-    // Save as structured JSON array
     await updateBrief(briefId, {
       status: 'collected',
       post_count: uniquePosts.length,
@@ -322,12 +278,11 @@ export async function POST(req: NextRequest) {
         total_posts: uniquePosts.length,
         sources_scraped: sourcesScraped,
         sources_total: sourcesScraped,
-        log: log.slice(-30)
+        log: log.slice(-20)
       }
     });
 
     await sendEmail(brief, uniquePosts.length);
-
     return NextResponse.json({ success: true, postCount: uniquePosts.length });
 
   } catch (err) {
