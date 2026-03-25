@@ -15,13 +15,18 @@ async function updateBrief(id: string, payload: object) {
 
 function cleanText(t: string): string {
   return t
+    .replace(/<[^>]+>/g, ' ')
     .replace(/&[a-z#0-9]+;/gi, ' ')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, "'")
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/"/g, "'")
+    .replace(/\\/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/[""'']/g, '"')
     .trim()
-    .slice(0, 200);
+    .slice(0, 250);
 }
 
 async function fetchFreshData(brief: any): Promise<any[]> {
@@ -150,9 +155,34 @@ Return ONLY this JSON with no markdown, no preamble:
     // Extract JSON robustly
     console.log('Full Claude response:', raw.slice(0, 500));
     if (!raw || raw.length === 0) throw new Error('Empty Claude response');
+
+    // Extract JSON and sanitize
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error(`No JSON in Claude response. Got: ${raw.slice(0, 200)}`);
-    const results = JSON.parse(match[0]);
+    if (!match) throw new Error(`No JSON found. Got: ${raw.slice(0, 200)}`);
+
+    let jsonStr = match[0];
+    // Remove control characters that break JSON parsing
+    jsonStr = jsonStr
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+      .replace(/\t/g, ' ')
+      .replace(/\r/g, ' ');
+
+    let results;
+    try {
+      results = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      // Try to fix common JSON issues - unescaped quotes in strings
+      console.log('JSON parse failed, attempting repair...');
+      const repaired = jsonStr
+        .replace(/([^\\])"([^"]*?)"/g, (m, p1, p2) => p1 + '"' + p2.replace(/"/g, '\\"') + '"')
+        .replace(/\n/g, ' ')
+        .replace(/\r/g, ' ');
+      try {
+        results = JSON.parse(repaired);
+      } catch {
+        throw new Error(`JSON parse failed: ${String(parseErr).slice(0, 100)}`);
+      }
+    }
     results.data_source = rawPosts.length > 0 ? 'collected' : 'fresh';
     results.post_count = rawPosts.length;
 

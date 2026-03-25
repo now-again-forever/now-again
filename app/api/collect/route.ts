@@ -182,7 +182,7 @@ async function serpDiscover(query: string, market: string, label: string): Promi
     const simple = simplifyQuery(query);
     const res = await fetch(
       `https://serpapi.com/search.json?q=${encodeURIComponent(simple)}&gl=${gl}&hl=${hl}&num=10&api_key=${SERPAPI_KEY}`,
-      { signal: AbortSignal.timeout(8000) }
+      { signal: AbortSignal.timeout(15000) }
     );
     const data = await res.json();
     return (data.organic_results || []).map((r: any) => r.link).filter(Boolean).slice(0, 10);
