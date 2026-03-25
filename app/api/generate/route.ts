@@ -101,9 +101,10 @@ export async function POST(req: NextRequest) {
 
       // Source type bonus/penalty
       if (SOCIAL_SOURCES.has(source)) score += 2;
+      if (p.type === 'youtube') score += 3;
       if (NEWS_SOURCES.has(source) || p.type === 'newsdata') score -= 2;
       if (p.type === 'wikipedia' || p.type === 'autocomplete') score -= 3;
-      if (p.type === 'youtube') score += 3;
+      if (/forum|community|reddit|mumsnet|netmums|thestudentroom|tripadvisor|trustpilot|yelp/i.test(source)) score += 2;
 
       // Marketing copy penalty
       if (MARKETING_SIGNALS.test(text)) score -= 4;
@@ -248,6 +249,59 @@ Return ONLY this JSON with no markdown, no preamble:
         throw new Error(`JSON parse failed: ${String(parseErr).slice(0, 100)}`);
       }
     }
+    // Post-process: enforce max 3 quotes from any single source across all themes
+    const MAX_PER_SOURCE = 3;
+    const sourceQuoteCounts: Record<string, number> = {};
+
+    // Build a pool of backup quotes not yet used, sorted by score
+    const usedPostIndices = new Set<number>();
+    const backupPool = orderedPosts
+      .map((p: any, i: number) => ({ ...p, _idx: i }))
+      .filter((p: any) => {
+        // Find which posts were actually quoted
+        const allVerbatims = (results.themes || []).flatMap((t: any) => t.verbatims || []);
+        const postNumMatch = allVerbatims.some((v: string) => v.startsWith(`[${p._idx + 1}]`));
+        if (postNumMatch) usedPostIndices.add(p._idx);
+        return !postNumMatch;
+      });
+
+    // Check source distribution across all verbatims
+    for (const theme of results.themes || []) {
+      const newVerbatims: string[] = [];
+      for (const v of theme.verbatims || []) {
+        // Find which post this verbatim came from
+        const postNumMatch = v.match(/^\[(\d+)\]/);
+        const postIndex = postNumMatch ? parseInt(postNumMatch[1]) - 1 : -1;
+        const post = orderedPosts[postIndex] as any;
+        const src = post?.source || 'unknown';
+
+        sourceQuoteCounts[src] = (sourceQuoteCounts[src] || 0) + 1;
+
+        if (sourceQuoteCounts[src] <= MAX_PER_SOURCE) {
+          // Keep this quote
+          newVerbatims.push(v);
+        } else {
+          // Find a replacement from a different source
+          const replacement = backupPool.find((p: any) => {
+            const pSrc = p.source || 'unknown';
+            return pSrc !== src && (sourceQuoteCounts[pSrc] || 0) < MAX_PER_SOURCE && p.text?.length > 40;
+          });
+
+          if (replacement) {
+            const pSrc = replacement.source || 'unknown';
+            sourceQuoteCounts[pSrc] = (sourceQuoteCounts[pSrc] || 0) + 1;
+            backupPool.splice(backupPool.indexOf(replacement), 1);
+            newVerbatims.push(`[${replacement._idx + 1}] ${cleanText(replacement.text)}`);
+          } else {
+            newVerbatims.push(v); // No replacement found, keep original
+          }
+        }
+      }
+      theme.verbatims = newVerbatims;
+    }
+
+    console.log('Source distribution after enforcement:', sourceQuoteCounts);
+
     results.data_source = rawPosts.length > 0 ? 'collected' : 'fresh';
     results.post_count = rawPosts.length;
 
