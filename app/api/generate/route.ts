@@ -106,8 +106,7 @@ Question: "${brief.question}"${sourceSummary}
 Sources available: ${uniqueSources.join(', ')}
 
 Here are ${numberedPosts.length} real collected posts tagged [source|country|date]:
-${numberedPosts.join('
-')}
+${numberedPosts.join('\n')}
 
 Identify 4 distinct cultural themes relevant to the question.
 
