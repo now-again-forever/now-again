@@ -4,6 +4,10 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
+const SERPAPI_KEY = process.env.SERPAPI_KEY;
+const NEWSDATA_KEY = process.env.NEWSDATA_KEY;
 
 interface Post {
   text: string;
@@ -35,6 +39,12 @@ const MARKET_TO_LANG: Record<string, string> = {
   'PL': 'pl', 'TR': 'tr', 'Global': 'en',
 };
 
+const MARKET_TO_YT_REGION: Record<string, string> = {
+  'UK': 'GB', 'US': 'US', 'USA': 'US', 'FR': 'FR', 'France': 'FR',
+  'ES': 'ES', 'Spain': 'ES', 'DE': 'DE', 'Germany': 'DE',
+  'PL': 'PL', 'TR': 'TR',
+};
+
 async function updateBrief(id: string, patch: object) {
   await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}`, {
     method: 'PATCH',
@@ -43,7 +53,16 @@ async function updateBrief(id: string, patch: object) {
   });
 }
 
-// ── 1. SCRAPE CURATED SOURCES ──
+function simplifyQuery(query: string): string {
+  if (query.length < 60 && !query.includes('(') && !query.includes(' OR ') && !query.includes(' AND ')) return query;
+  const quoted = (query.match(/"([^"]+)"/g) || []).map((s: string) => s.replace(/"/g, ''));
+  if (quoted.length > 0) return quoted.slice(0, 3).join(' ');
+  return query.replace(/\b(AND|OR|NOT|NEAR|lang|source[a-z]*|wordcount|sample)\b[^\s]*/gi, ' ')
+    .replace(/[()[\]+]/g, ' ').replace(/\s+/g, ' ').trim()
+    .split(' ').filter((w: string) => w.length > 4 && !w.includes(':')).slice(0, 5).join(' ');
+}
+
+// ── LAYER 1: Curated source scraping ──
 async function scrapePage(url: string, country: string, category: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
@@ -55,197 +74,195 @@ async function scrapePage(url: string, country: string, category: string): Promi
     const html = await res.text();
     const clean = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/g, ' ').replace(/\s+/g, ' ').trim();
     const hostname = (() => { try { return new URL(url).hostname.replace('www.', ''); } catch { return url; } })();
-
-    const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
-    const title = titleMatch ? clean(titleMatch[1]) : '';
-
-    const headings = (html.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi) || [])
-      .map(h => clean(h)).filter(t => t.length > 15 && t.length < 200).slice(0, 4);
-
-    const paras = (html.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) || [])
-      .map(p => clean(p))
-      .filter(t => t.length > 80 && t.length < 500 && !t.toLowerCase().includes('cookie') && !t.toLowerCase().includes('privacy policy') && !t.toLowerCase().includes('subscribe'))
-      .slice(0, 4);
-
-    const combined = [title, ...headings].filter(Boolean).join('. ');
-    if (combined.length > 20) {
-      posts.push({ text: combined.slice(0, 600), source: hostname, url, country, category, timestamp: new Date().toISOString(), type: 'web' });
-    }
-
-    for (const p of paras) {
-      posts.push({ text: p, source: hostname, url, country, category, timestamp: new Date().toISOString(), type: 'web' });
-    }
-  } catch { /* silent fail */ }
+    const title = html.match(/<title[^>]*>(.*?)<\/title>/i)?.[1] || '';
+    const headings = (html.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi) || []).map(h => clean(h)).filter(t => t.length > 15 && t.length < 200).slice(0, 4);
+    const paras = (html.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) || []).map(p => clean(p))
+      .filter(t => t.length > 80 && t.length < 500 && !t.toLowerCase().includes('cookie') && !t.toLowerCase().includes('privacy') && !t.toLowerCase().includes('subscribe')).slice(0, 4);
+    const combined = [clean(title), ...headings].filter(Boolean).join('. ');
+    if (combined.length > 20) posts.push({ text: combined.slice(0, 500), source: hostname, url, country, category, timestamp: new Date().toISOString(), type: 'web' });
+    for (const p of paras) posts.push({ text: p, source: hostname, url, country, category, timestamp: new Date().toISOString(), type: 'web' });
+  } catch { }
   return posts;
 }
 
-// ── 2a. HACKER NEWS ──
-function simplifyQuery(query: string): string {
-  // If query is already short and readable (a label), use it directly
-  if (query.length < 60 && !query.includes('(') && !query.includes(' OR ') && !query.includes(' AND ')) {
-    return query;
-  }
-  // Extract quoted phrases first - these are the most meaningful terms
-  const quoted = (query.match(/"([^"]+)"/g) || []).map((s: string) => s.replace(/"/g, ''));
-  if (quoted.length > 0) return quoted.slice(0, 3).join(' ');
-  // Fall back to stripping operators and taking meaningful words
-  const words = query
-    .replace(/\b(AND|OR|NOT|NEAR|lang|source[a-z]*|wordcount|sample)\b[^\s]*/gi, ' ')
-    .replace(/[()\[\]+]/g, ' ')
-    .replace(/\s+/g, ' ').trim()
-    .split(' ')
-    .filter((w: string) => w.length > 4 && !w.includes(':'))
-    .slice(0, 5);
-  return words.join(' ');
-}
-
+// ── LAYER 2a: Hacker News ──
 async function fetchHN(query: string, label: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
-    const simple = simplifyQuery(query);
-    const res = await fetch(
-      `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(simple)}&tags=story&hitsPerPage=25`,
-      { signal: AbortSignal.timeout(6000) }
-    );
+    const res = await fetch(`https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(simplifyQuery(query))}&tags=story&hitsPerPage=20`, { signal: AbortSignal.timeout(6000) });
     const data = await res.json();
     for (const hit of data.hits || []) {
-      if (hit.title) posts.push({
-        text: hit.story_text ? `${hit.title}. ${hit.story_text.slice(0, 300)}` : hit.title,
-        source: 'Hacker News', url: hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`,
-        country: 'Global', category: 'Technology & culture',
-        timestamp: hit.created_at || new Date().toISOString(), type: 'hn', query_label: label
-      });
+      if (hit.title) posts.push({ text: hit.story_text ? `${hit.title}. ${hit.story_text.slice(0, 200)}` : hit.title, source: 'Hacker News', url: hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`, country: 'Global', category: 'Technology & culture', timestamp: hit.created_at || new Date().toISOString(), type: 'hn', query_label: label });
     }
   } catch (e) { console.error('HN:', e); }
   return posts;
 }
 
-// ── 2b. BLUESKY ──
+// ── LAYER 2b: Bluesky ──
 async function fetchBluesky(query: string, label: string, lang?: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
-    const simple = simplifyQuery(query);
     const langParam = lang && lang !== 'en' ? `&lang=${lang}` : '';
-    const res = await fetch(
-      `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(simple)}&limit=25${langParam}`,
-      { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) }
-    );
+    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(simplifyQuery(query))}&limit=20${langParam}`, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) });
     const text = await res.text();
     if (!text.startsWith('{')) return posts;
     const data = JSON.parse(text);
     for (const post of data.posts || []) {
-      if (post.record?.text?.length > 20) posts.push({
-        text: post.record.text,
-        source: 'Bluesky', url: `https://bsky.app/profile/${post.author?.handle}`,
-        country: 'Global', category: 'Social media',
-        timestamp: post.indexedAt || new Date().toISOString(), type: 'bluesky', query_label: label
-      });
+      if (post.record?.text?.length > 20) posts.push({ text: post.record.text, source: 'Bluesky', url: `https://bsky.app/profile/${post.author?.handle}`, country: 'Global', category: 'Social media', timestamp: post.indexedAt || new Date().toISOString(), type: 'bluesky', query_label: label });
     }
   } catch (e) { console.error('Bluesky:', e); }
   return posts;
 }
 
-// ── 2c. MASTODON ──
-async function fetchMastodon(query: string, label: string): Promise<Post[]> {
+// ── LAYER 3: YouTube Comments ──
+async function fetchYouTube(query: string, label: string, markets: string[]): Promise<Post[]> {
   const posts: Post[] = [];
+  if (!YOUTUBE_API_KEY) return posts;
   try {
+    const regionCode = MARKET_TO_YT_REGION[markets[0]] || 'US';
+    const lang = MARKET_TO_LANG[markets[0]] || 'en';
     const simple = simplifyQuery(query);
-    const res = await fetch(
-      `https://mastodon.social/api/v2/search?q=${encodeURIComponent(simple)}&type=statuses&limit=20&resolve=false`,
-      { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) }
+
+    // Search for videos
+    const searchRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(simple)}&type=video&maxResults=5&relevanceLanguage=${lang}&regionCode=${regionCode}&key=${YOUTUBE_API_KEY}`,
+      { signal: AbortSignal.timeout(8000) }
     );
-    const data = await res.json();
-    for (const status of data.statuses || []) {
-      const text = status.content?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      if (text && text.length > 20) posts.push({
-        text, source: 'Mastodon',
-        url: status.url || 'https://mastodon.social',
-        country: 'Global', category: 'Social media',
-        timestamp: status.created_at || new Date().toISOString(), type: 'mastodon', query_label: label
-      });
+    const searchData = await searchRes.json();
+    const videoIds = (searchData.items || []).map((v: any) => v.id?.videoId).filter(Boolean);
+
+    // Get comments for each video
+    for (const videoId of videoIds.slice(0, 3)) {
+      try {
+        const commentsRes = await fetch(
+          `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=20&order=relevance&key=${YOUTUBE_API_KEY}`,
+          { signal: AbortSignal.timeout(8000) }
+        );
+        const commentsData = await commentsRes.json();
+        for (const item of commentsData.items || []) {
+          const text = item.snippet?.topLevelComment?.snippet?.textDisplay;
+          const author = item.snippet?.topLevelComment?.snippet?.authorDisplayName;
+          if (text && text.length > 30) {
+            posts.push({
+              text: text.replace(/<[^>]+>/g, '').slice(0, 400),
+              source: 'YouTube',
+              url: `https://youtube.com/watch?v=${videoId}`,
+              country: markets[0] || 'Global',
+              category: 'Social media',
+              timestamp: item.snippet?.topLevelComment?.snippet?.publishedAt || new Date().toISOString(),
+              type: 'youtube',
+              query_label: label
+            });
+          }
+        }
+      } catch { }
     }
-  } catch (e) { console.error('Mastodon:', e); }
+  } catch (e) { console.error('YouTube:', e); }
   return posts;
 }
 
-// ── 3. GOOGLE AUTOCOMPLETE ──
+// ── LAYER 4: Tavily Deep Search ──
+async function fetchTavily(query: string, label: string): Promise<Post[]> {
+  const posts: Post[] = [];
+  if (!TAVILY_API_KEY) return posts;
+  try {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: TAVILY_API_KEY,
+        query: simplifyQuery(query),
+        search_depth: 'basic',
+        max_results: 8,
+        include_raw_content: false
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+    const data = await res.json();
+    for (const result of data.results || []) {
+      if (result.content && result.content.length > 50) {
+        posts.push({
+          text: result.content.slice(0, 400),
+          source: result.url ? new URL(result.url).hostname.replace('www.', '') : 'Web',
+          url: result.url || '',
+          country: 'Global',
+          category: 'Web',
+          timestamp: result.published_date || new Date().toISOString(),
+          type: 'tavily',
+          query_label: label
+        });
+      }
+    }
+  } catch (e) { console.error('Tavily:', e); }
+  return posts;
+}
+
+// ── LAYER 5: Google Autocomplete ──
 async function fetchGoogleAutocomplete(keyword: string, market: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
     const gl = MARKET_TO_ISO[market] || 'us';
     const hl = MARKET_TO_LANG[market] || 'en';
-    const res = await fetch(
-      `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(keyword)}&gl=${gl}&hl=${hl}`,
-      { signal: AbortSignal.timeout(5000) }
-    );
+    const res = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(keyword)}&gl=${gl}&hl=${hl}`, { signal: AbortSignal.timeout(5000) });
     const data = await res.json();
     const suggestions = data[1] || [];
     if (suggestions.length > 0) {
-      posts.push({
-        text: `Google search suggestions for "${keyword}" in ${market}: people are searching for "${suggestions.slice(0, 6).join('", "')}"`,
-        source: 'Google Autocomplete', url: `https://google.com/search?q=${encodeURIComponent(keyword)}`,
-        country: market, category: 'Search intent',
-        timestamp: new Date().toISOString(), type: 'google_autocomplete'
-      });
+      posts.push({ text: `Google search suggestions for "${keyword}" in ${market}: people are searching for "${suggestions.slice(0, 6).join('", "')}"`, source: 'Google Autocomplete', url: `https://google.com/search?q=${encodeURIComponent(keyword)}`, country: market, category: 'Search intent', timestamp: new Date().toISOString(), type: 'google_autocomplete' });
     }
   } catch (e) { console.error('Autocomplete:', e); }
   return posts;
 }
 
-// ── 4. NEWSAPI ──
-async function fetchNews(query: string, label: string, markets: string[]): Promise<Post[]> {
+// ── LAYER 6: Newsdata.io (multilingual) ──
+async function fetchNewsdata(query: string, label: string, markets: string[]): Promise<Post[]> {
   const posts: Post[] = [];
-  if (!NEWS_API_KEY) return posts;
+  if (!NEWSDATA_KEY) return posts;
   try {
-    const iso = markets.map((m: string) => MARKET_TO_ISO[m]).filter(Boolean).join(',');
+    const lang = MARKET_TO_LANG[markets[0]] || 'en';
+    const country = MARKET_TO_ISO[markets[0]] || '';
     const simple = simplifyQuery(query);
-    const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(simple)}&language=en${iso ? `&domains=` : ''}&sortBy=relevancy&pageSize=10&apiKey=${NEWS_API_KEY}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    const url = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${encodeURIComponent(simple)}&language=${lang}${country ? `&country=${country}` : ''}&size=10`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     const data = await res.json();
-    for (const article of data.articles || []) {
+    for (const article of data.results || []) {
       if (article.title && !article.title.includes('[Removed]')) {
         posts.push({
           text: article.description ? `${article.title}. ${article.description}` : article.title,
-          source: article.source?.name || 'News',
-          url: article.url || '',
-          country: markets[0] || 'Global',
-          category: 'News & journalism',
-          timestamp: article.publishedAt || new Date().toISOString(),
-          type: 'news', query_label: label
+          source: article.source_id || 'News',
+          url: article.link || '',
+          country: article.country?.[0] || markets[0] || 'Global',
+          category: 'News',
+          timestamp: article.pubDate || new Date().toISOString(),
+          type: 'newsdata',
+          query_label: label
         });
       }
     }
-  } catch (e) { console.error('NewsAPI:', e); }
+  } catch (e) { console.error('Newsdata:', e); }
   return posts;
 }
 
-// ── 5. WIKIPEDIA TRENDING ──
+// ── LAYER 7: Wikipedia ──
 async function fetchWikipedia(keyword: string, market: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
     const lang = MARKET_TO_LANG[market] || 'en';
-    const res = await fetch(
-      `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(keyword)}&srlimit=5&format=json&origin=*`,
-      { signal: AbortSignal.timeout(5000) }
-    );
-    const data = await res.json();
+    const res = await fetch(`https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(keyword)}&srlimit=3&format=json&origin=*`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return posts;
+    const text = await res.text();
+    if (!text.startsWith('{')) return posts;
+    const data = JSON.parse(text);
     for (const result of data.query?.search || []) {
       const snippet = result.snippet?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
       if (snippet && snippet.length > 30) {
-        posts.push({
-          text: `Wikipedia: "${result.title}" — ${snippet}`,
-          source: 'Wikipedia',
-          url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(result.title)}`,
-          country: market, category: 'Cultural reference',
-          timestamp: new Date().toISOString(), type: 'wikipedia'
-        });
+        posts.push({ text: `Wikipedia: "${result.title}" — ${snippet}`, source: 'Wikipedia', url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(result.title)}`, country: market, category: 'Cultural reference', timestamp: new Date().toISOString(), type: 'wikipedia' });
       }
     }
   } catch (e) { console.error('Wikipedia:', e); }
   return posts;
 }
 
-// ── SEND EMAIL ──
+// ── EMAIL ──
 async function sendEmail(brief: any, postCount: number, sourceCount: number) {
   if (!RESEND_KEY || !brief.client_email) return;
   try {
@@ -261,15 +278,10 @@ async function sendEmail(brief: any, postCount: number, sourceCount: number) {
           <p style="color:#666;line-height:1.7">NOW-AGAIN has finished collecting for <strong>${brief.brand}</strong>.</p>
           <p style="color:#999;font-style:italic">"${brief.question}"</p>
           <ul style="color:#666;line-height:2.2">
-            <li><strong>${postCount}</strong> conversations collected</li>
-            <li><strong>${sourceCount}</strong> distinct sources</li>
+            <li><strong>${postCount}</strong> conversations from <strong>${sourceCount}</strong> sources</li>
             <li>${(brief.markets||[]).join(', ')} markets</li>
-            <li>${(brief.selected_clusters||[]).join(', ')}</li>
           </ul>
-          <a href="https://now-again-xi.vercel.app/collecting/${brief.id}"
-             style="display:inline-block;background:#0e0d0b;color:#f5f3ee;padding:14px 28px;border-radius:6px;text-decoration:none;font-family:sans-serif;font-size:14px;margin-top:8px">
-            Generate insights →
-          </a>
+          <a href="https://now-again-xi.vercel.app/collecting/${brief.id}" style="display:inline-block;background:#0e0d0b;color:#f5f3ee;padding:14px 28px;border-radius:6px;text-decoration:none;font-family:sans-serif;font-size:14px;margin-top:8px">Generate insights →</a>
         </div>`
       })
     });
@@ -293,113 +305,77 @@ export async function POST(req: NextRequest) {
     const dbMarkets = markets.map((m: string) => MARKET_MAP[m] || m);
 
     let allPosts: Post[] = [];
-    let log: string[] = [`Starting full collection for ${brief.brand} across ${markets.join(', ')}...`];
+    let log: string[] = [`Starting full collection for ${brief.brand} — ${markets.join(', ')}...`];
 
-    await updateBrief(briefId, {
-      status: 'collecting',
-      collection_progress: { total_posts: 0, sources_scraped: 0, sources_total: 100, log }
-    });
+    await updateBrief(briefId, { status: 'collecting', collection_progress: { total_posts: 0, sources_scraped: 0, sources_total: 100, log } });
 
-    const saveProgress = async (extra?: string) => {
-      if (extra) log = [...log, extra];
-      await updateBrief(briefId, {
-        collection_progress: {
-          total_posts: allPosts.length,
-          sources_scraped: allPosts.length,
-          sources_total: 100,
-          log: log.slice(-25)
-        }
-      });
+    const save = async (msg?: string) => {
+      if (msg) log = [...log, msg];
+      await updateBrief(briefId, { collection_progress: { total_posts: allPosts.length, sources_scraped: allPosts.length, sources_total: 100, log: log.slice(-25) } });
     };
 
-    // ── LAYER 1: Curated source scraping ──
+    // ── LAYER 1: Curated sources ──
     if (clusters.length > 0 && dbMarkets.length > 0) {
       const catList = clusters.map((c: string) => `"${c}"`).join(',');
       const mktList = dbMarkets.map((m: string) => `"${m}"`).join(',');
-      const srcRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/sources?country=in.(${mktList})&category=in.(${catList})&select=url,country,category&limit=80`,
-        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
-      );
-      const sourcesRaw = await srcRes.json();
-      const sources = Array.isArray(sourcesRaw) ? sourcesRaw : [];
-      log = [...log, `Layer 1: Found ${sources.length} curated sources for ${dbMarkets.join(', ')} (${clusters.join(', ')})`];
-      await saveProgress();
-
+      const srcRes = await fetch(`${SUPABASE_URL}/rest/v1/sources?country=in.(${mktList})&category=in.(${catList})&select=url,country,category&limit=60`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      const srcRaw = await srcRes.json();
+      const sources = Array.isArray(srcRaw) ? srcRaw : [];
+      await save(`Layer 1: Scraping ${sources.length} curated sources...`);
       for (let i = 0; i < sources.length; i += 8) {
         const batch = sources.slice(i, i + 8);
         const results = await Promise.all(batch.map((s: any) => scrapePage(s.url, s.country, s.category)));
         const batchPosts = results.flat();
         allPosts = [...allPosts, ...batchPosts];
-        const successful = batch.filter((_: any, j: number) => results[j].length > 0).map((s: any) => { try { return new URL(s.url).hostname.replace('www.',''); } catch { return ''; } }).filter(Boolean);
-        if (successful.length > 0) await saveProgress(`+${batchPosts.length} from ${successful.slice(0,3).join(', ')}`);
+        const sites = batch.filter((_: any, j: number) => results[j].length > 0).map((s: any) => { try { return new URL(s.url).hostname.replace('www.',''); } catch { return ''; } }).filter(Boolean);
+        if (sites.length > 0) await save(`+${batchPosts.length} from ${sites.slice(0,3).join(', ')}`);
       }
     }
 
-    // ── LAYER 2: Social APIs per query ──
-    log = [...log, `Layer 2: Running ${queries.length} queries across HN, Bluesky, Mastodon...`];
-    await saveProgress();
+    // ── LAYERS 2+3+4+6: Social + YouTube + Tavily + News per query ──
+    const lang = MARKET_TO_LANG[markets[0]] || 'en';
+    const broadTerms = [brief.category, ...(brief.question||'').replace(/[?"]/g,'').split(' ').filter((w:string) => w.length > 5).slice(0,2)];
+    const allInputs = [...queries, ...broadTerms.map((t:string) => ({ label: t, query: t }))];
 
-    // Also run broad category keywords as fallback
-    const broadKeywords = [
-      brief.category,
-      ...brief.question.replace(/[?"]/g,'').split(' ').filter((w: string) => w.length > 5).slice(0, 3)
-    ];
-    const allQueryInputs = [
-      ...queries.map((q: {label:string,query:string}) => ({ label: q.label, query: q.query })),
-      ...broadKeywords.map((kw: string) => ({ label: kw, query: kw }))
-    ];
+    await save(`Layer 2–4: Running ${allInputs.length} queries across social, YouTube, Tavily, news...`);
 
-    for (const q of allQueryInputs) {
-      const lang = MARKET_TO_LANG[markets[0]] || 'en';
-      // Use label for social search (readable), boolean query for news (supports operators)
-      const socialQuery = q.label || q.query;
-      const [hn, bsky, masto] = await Promise.all([
-        fetchHN(socialQuery, q.label),
-        fetchBluesky(socialQuery, q.label, lang),
-        fetchMastodon(socialQuery, q.label)
+    for (const q of allInputs) {
+      const [hn, bsky, yt, tv, nd] = await Promise.all([
+        fetchHN(q.query, q.label),
+        fetchBluesky(q.query, q.label, lang),
+        fetchYouTube(q.query, q.label, markets),
+        fetchTavily(q.query, q.label),
+        fetchNewsdata(q.query, q.label, markets),
       ]);
-      allPosts = [...allPosts, ...hn, ...bsky, ...masto];
-      if (hn.length + bsky.length + masto.length > 0) {
-        await saveProgress(`"${q.label}": +${hn.length}HN +${bsky.length}Bluesky +${masto.length}Mastodon`);
-      }
+      const total = hn.length + bsky.length + yt.length + tv.length + nd.length;
+      allPosts = [...allPosts, ...hn, ...bsky, ...yt, ...tv, ...nd];
+      if (total > 0) await save(`"${q.label}": +${hn.length}HN +${bsky.length}Bsky +${yt.length}YT +${tv.length}Tavily +${nd.length}News`);
     }
 
-    // ── LAYER 3: Google Autocomplete per market ──
-    log = [...log, `Layer 3: Google search intent signals...`];
-    const keywords = [brief.category, ...(brief.question || '').split(' ').filter((w: string) => w.length > 5).slice(0, 2)];
-    for (const market of markets.slice(0, 3)) {
-      for (const kw of keywords.slice(0, 2)) {
+    // ── LAYER 5: Google Autocomplete ──
+    await save('Layer 5: Google search intent...');
+    const kwds = [brief.category, ...(brief.question||'').split(' ').filter((w:string) => w.length > 5).slice(0,2)];
+    for (const market of markets.slice(0,3)) {
+      for (const kw of kwds.slice(0,2)) {
         const auto = await fetchGoogleAutocomplete(kw, market);
         allPosts = [...allPosts, ...auto];
       }
     }
-    await saveProgress(`+${markets.length * 2} autocomplete signals`);
 
-    // ── LAYER 4: NewsAPI ──
-    if (NEWS_API_KEY && queries.length > 0) {
-      log = [...log, `Layer 4: News coverage...`];
-      for (const q of queries.slice(0, 3)) {
-        const news = await fetchNews(q.query, q.label, markets);
-        allPosts = [...allPosts, ...news];
-      }
-      await saveProgress(`+news articles collected`);
-    }
-
-    // ── LAYER 5: Wikipedia cultural context ──
-    log = [...log, `Layer 5: Cultural context from Wikipedia...`];
-    const wikiKeywords = brief.category.split(' ').filter((w: string) => w.length > 4).slice(0, 2);
-    for (const market of markets.slice(0, 2)) {
-      for (const kw of wikiKeywords) {
+    // ── LAYER 7: Wikipedia ──
+    await save('Layer 7: Cultural context...');
+    const wikiKws = (brief.category||'').split(' ').filter((w:string) => w.length > 4).slice(0,2);
+    for (const market of markets.slice(0,2)) {
+      for (const kw of wikiKws) {
         const wiki = await fetchWikipedia(kw, market);
         allPosts = [...allPosts, ...wiki];
       }
     }
-    await saveProgress(`+Wikipedia context`);
 
     // Deduplicate
     const seen = new Set<string>();
     const uniquePosts = allPosts.filter(p => {
-      const key = p.text.slice(0, 100).toLowerCase();
+      const key = p.text.slice(0, 80).toLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -407,20 +383,15 @@ export async function POST(req: NextRequest) {
 
     const sourceNames = [...new Set(uniquePosts.map(p => p.source))];
     const countries = [...new Set(uniquePosts.map(p => p.country).filter(c => c !== 'Global'))];
-    log = [...log, `Complete — ${uniquePosts.length} posts from ${sourceNames.length} sources: ${sourceNames.slice(0,6).join(', ')}`];
-    if (countries.length > 0) log = [...log, `Markets represented: ${countries.join(', ')}`];
+    log = [...log, `Complete — ${uniquePosts.length} posts from ${sourceNames.length} sources: ${sourceNames.slice(0,8).join(', ')}`];
+    if (countries.length > 0) log = [...log, `Markets: ${countries.join(', ')}`];
 
     await updateBrief(briefId, {
       status: 'collected',
       post_count: uniquePosts.length,
       collected_posts: uniquePosts.map(p => `[${p.source}][${p.country}] ${p.text}`),
       collected_posts_full: uniquePosts,
-      collection_progress: {
-        total_posts: uniquePosts.length,
-        sources_scraped: uniquePosts.length,
-        sources_total: uniquePosts.length,
-        log: log.slice(-30)
-      }
+      collection_progress: { total_posts: uniquePosts.length, sources_scraped: uniquePosts.length, sources_total: uniquePosts.length, log: log.slice(-30) }
     });
 
     await sendEmail(brief, uniquePosts.length, sourceNames.length);
