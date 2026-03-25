@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-4-5',
         max_tokens: 2500,
         messages: [{
           role: 'user',
@@ -134,8 +134,10 @@ Return ONLY this JSON with no markdown, no preamble:
     console.log('Claude preview:', raw.slice(0, 150));
 
     // Extract JSON robustly
+    console.log('Full Claude response:', raw.slice(0, 500));
+    if (!raw || raw.length === 0) throw new Error('Empty Claude response');
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in Claude response');
+    if (!match) throw new Error(`No JSON in Claude response. Got: ${raw.slice(0, 200)}`);
     const results = JSON.parse(match[0]);
     results.data_source = rawPosts.length > 0 ? 'collected' : 'fresh';
     results.post_count = rawPosts.length;
