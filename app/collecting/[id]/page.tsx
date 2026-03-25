@@ -264,7 +264,7 @@ const s: Record<string, React.CSSProperties> = {
   mainSub: { fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.7, margin: 0 },
   progressSection: { display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' },
   progressRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  progressLabel: { fontSize: '0.78rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontSize: '0.7rem' },
+  progressLabel: { fontSize: '0.78rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '0.06em' },
   progressValue: { fontSize: '0.875rem', color: '#f5f3ee', fontWeight: 500 },
   progressTrack: { height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden', margin: '4px 0 12px' },
   progressFill: { height: '100%', background: '#2d4a3e', borderRadius: 2, transition: 'width 2s ease' },
