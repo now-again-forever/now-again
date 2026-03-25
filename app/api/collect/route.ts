@@ -80,11 +80,20 @@ async function scrapePage(url: string, country: string, category: string): Promi
 }
 
 // ── 2a. HACKER NEWS ──
+function simplifyQuery(query: string): string {
+  // Extract quoted phrases and key nouns, strip Boolean operators
+  const quoted = (query.match(/"([^"]+)"/g) || []).map(s => s.replace(/"/g,''));
+  const words = query.replace(/"[^"]+"/g, '').replace(/\(|\)|AND|OR|NOT|NEAR\/\d+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(w => w.length > 4).slice(0, 4);
+  const terms = [...new Set([...quoted.slice(0,2), ...words])].slice(0, 5);
+  return terms.join(' ');
+}
+
 async function fetchHN(query: string, label: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
+    const simple = simplifyQuery(query);
     const res = await fetch(
-      `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=25`,
+      `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(simple)}&tags=story&hitsPerPage=25`,
       { signal: AbortSignal.timeout(6000) }
     );
     const data = await res.json();
@@ -104,7 +113,7 @@ async function fetchHN(query: string, label: string): Promise<Post[]> {
 async function fetchBluesky(query: string, label: string, lang?: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
-    const simple = query.replace(/\(|\)|AND|OR|NOT|NEAR\/\d+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' ');
+    const simple = simplifyQuery(query);
     const langParam = lang && lang !== 'en' ? `&lang=${lang}` : '';
     const res = await fetch(
       `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(simple)}&limit=25${langParam}`,
@@ -129,8 +138,9 @@ async function fetchBluesky(query: string, label: string, lang?: string): Promis
 async function fetchMastodon(query: string, label: string): Promise<Post[]> {
   const posts: Post[] = [];
   try {
+    const simple = simplifyQuery(query);
     const res = await fetch(
-      `https://mastodon.social/api/v2/search?q=${encodeURIComponent(query)}&type=statuses&limit=20&resolve=false`,
+      `https://mastodon.social/api/v2/search?q=${encodeURIComponent(simple)}&type=statuses&limit=20&resolve=false`,
       { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) }
     );
     const data = await res.json();
@@ -177,7 +187,7 @@ async function fetchNews(query: string, label: string, markets: string[]): Promi
   if (!NEWS_API_KEY) return posts;
   try {
     const iso = markets.map((m: string) => MARKET_TO_ISO[m]).filter(Boolean).join(',');
-    const simple = query.replace(/\(|\)|AND|OR|NOT|NEAR\/\d+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 5).join(' ');
+    const simple = simplifyQuery(query);
     const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(simple)}&language=en${iso ? `&domains=` : ''}&sortBy=relevancy&pageSize=10&apiKey=${NEWS_API_KEY}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
     const data = await res.json();
@@ -299,8 +309,9 @@ export async function POST(req: NextRequest) {
         `${SUPABASE_URL}/rest/v1/sources?country=in.(${mktList})&category=in.(${catList})&select=url,country,category&limit=80`,
         { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
       );
-      const sources = await srcRes.json();
-      log = [...log, `Layer 1: Scraping ${sources.length} curated sources (${clusters.join(', ')})`];
+      const sourcesRaw = await srcRes.json();
+      const sources = Array.isArray(sourcesRaw) ? sourcesRaw : [];
+      log = [...log, `Layer 1: Found ${sources.length} curated sources for ${dbMarkets.join(', ')} (${clusters.join(', ')})`];
       await saveProgress();
 
       for (let i = 0; i < sources.length; i += 8) {
@@ -317,7 +328,17 @@ export async function POST(req: NextRequest) {
     log = [...log, `Layer 2: Running ${queries.length} queries across HN, Bluesky, Mastodon...`];
     await saveProgress();
 
-    for (const q of queries) {
+    // Also run broad category keywords as fallback
+    const broadKeywords = [
+      brief.category,
+      ...brief.question.replace(/[?"]/g,'').split(' ').filter((w: string) => w.length > 5).slice(0, 3)
+    ];
+    const allQueryInputs = [
+      ...queries.map((q: {label:string,query:string}) => ({ label: q.label, query: q.query })),
+      ...broadKeywords.map((kw: string) => ({ label: kw, query: kw }))
+    ];
+
+    for (const q of allQueryInputs) {
       const lang = MARKET_TO_LANG[markets[0]] || 'en';
       const [hn, bsky, masto] = await Promise.all([
         fetchHN(q.query, q.label),
@@ -325,7 +346,9 @@ export async function POST(req: NextRequest) {
         fetchMastodon(q.query, q.label)
       ]);
       allPosts = [...allPosts, ...hn, ...bsky, ...masto];
-      await saveProgress(`"${q.label}": +${hn.length}HN +${bsky.length}Bluesky +${masto.length}Mastodon`);
+      if (hn.length + bsky.length + masto.length > 0) {
+        await saveProgress(`"${q.label}": +${hn.length}HN +${bsky.length}Bluesky +${masto.length}Mastodon`);
+      }
     }
 
     // ── LAYER 3: Google Autocomplete per market ──
