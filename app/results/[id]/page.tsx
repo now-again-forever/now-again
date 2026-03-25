@@ -23,6 +23,7 @@ interface Theme {
 }
 
 interface Brief {
+  collected_posts_full?: any[];
   id: string;
   brand: string;
   category: string;
