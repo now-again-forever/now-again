@@ -93,13 +93,11 @@ Sort by frequency descending.`;
     })).sort((a: any, b: any) => b.count - a.count);
 
     // Save clusters and filtered posts to Supabase
+    // Save clusters WITHOUT replacing collected_posts_full — bucket indices must stay stable
     await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${briefId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      body: JSON.stringify({
-        clusters,
-        collected_posts_full: scoredPosts // replace with quality-filtered posts
-      })
+      body: JSON.stringify({ clusters })
     });
 
     return NextResponse.json({ success: true, clusterCount: clusters.length, postCount: scoredPosts.length });
