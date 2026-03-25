@@ -76,8 +76,73 @@ export async function POST(req: NextRequest) {
       console.log(`Using ${rawPosts.length} fresh posts`);
     }
 
+    // Quality-weighted selection with soft diversity
+    const NEWS_SOURCES = new Set(['Guardian', 'BBC', 'Reuters', 'AP', 'Telegraph', 'Times', 'Independent', 'Daily Mail', 'Mirror', 'Sun', 'Forbes', 'Bloomberg', 'CNN', 'Fox']);
+    const SOCIAL_SOURCES = new Set(['YouTube', 'Bluesky', 'Mastodon', 'Twitter', 'Reddit']);
+    const MARKETING_SIGNALS = /buy now|shop now|discount|offer|% off|subscribe|sign up|click here|learn more/i;
+    const OPINION_SIGNALS = /\b(love|hate|think|feel|believe|prefer|wish|hope|can't stand|obsessed|amazing|terrible|awful|brilliant|disappointing)\b/i;
+    const SPECIFIC_SIGNALS = /\b(\d+|yesterday|last week|last year|always|never|every day|sometimes|usually)\b/i;
+
+    function scorePost(p: any): number {
+      const text = p.text || '';
+      const source = p.source || '';
+      let score = 0;
+
+      // First-person voice — highest priority
+      if (/\bI\b/.test(text)) score += 4;
+      if (/\bmy\b|\bme\b/i.test(text)) score += 2;
+      if (/\bwe\b|\bour\b/i.test(text)) score += 1;
+
+      // Opinion and emotional language
+      if (OPINION_SIGNALS.test(text)) score += 2;
+
+      // Specific detail signals authenticity
+      if (SPECIFIC_SIGNALS.test(text)) score += 1;
+
+      // Source type bonus/penalty
+      if (SOCIAL_SOURCES.has(source)) score += 2;
+      if (NEWS_SOURCES.has(source) || p.type === 'newsdata') score -= 2;
+      if (p.type === 'wikipedia' || p.type === 'autocomplete') score -= 3;
+      if (p.type === 'youtube') score += 3;
+
+      // Marketing copy penalty
+      if (MARKETING_SIGNALS.test(text)) score -= 4;
+
+      // Length sweet spot — conversational length
+      if (text.length > 80 && text.length < 300) score += 1;
+      if (text.length < 40) score -= 2;
+
+      return score;
+    }
+
+    // Score all posts
+    const scoredPosts = rawPosts.map((p: any) => ({ ...p, _score: scorePost(p) }));
+
+    // Sort by score descending
+    scoredPosts.sort((a: any, b: any) => b._score - a._score);
+
+    // Apply soft diversity: track selected count per source, penalise repetition
+    const selectedSourceCounts: Record<string, number> = {};
+    const orderedPosts: any[] = [];
+
+    for (const post of scoredPosts) {
+      const src = post.source || 'unknown';
+      const count = selectedSourceCounts[src] || 0;
+      // Apply soft penalty: each post beyond the 3rd from same source loses 1 point
+      const adjustedScore = post._score - Math.max(0, count - 2);
+      if (adjustedScore >= -1) { // Only exclude truly bad posts
+        orderedPosts.push(post);
+        selectedSourceCounts[src] = count + 1;
+      }
+      if (orderedPosts.length >= 40) break;
+    }
+
+    const firstPersonCount = orderedPosts.filter((p: any) => /\bI\b/i.test(p.text || '')).length;
+    const sourceSpread = Object.keys(selectedSourceCounts).length;
+    console.log(`Quality selection: ${orderedPosts.length} posts, ${firstPersonCount} first-person, ${sourceSpread} sources`);
+
     // Build clean numbered post list
-    const numberedPosts = rawPosts.map((p, i) => {
+    const numberedPosts = orderedPosts.map((p, i) => {
       const text = cleanText(p.text || String(p));
       const source = p.source || 'unknown';
       const country = p.country || 'Global';
@@ -85,8 +150,8 @@ export async function POST(req: NextRequest) {
       return `[${i + 1}] [${source}|${country}${date ? '|' + date : ''}] ${text}`;
     });
 
-    const sourceSummary = rawPosts.length > 0
-      ? `\nData from: ${[...new Set(rawPosts.map((p: any) => p.source))].slice(0, 6).join(', ')}.`
+    const sourceSummary = orderedPosts.length > 0
+      ? `\nData from: ${[...new Set(orderedPosts.map((p: any) => p.source))].slice(0, 6).join(', ')}.`
       : '';
 
     // Group posts by source type for diversity tracking
