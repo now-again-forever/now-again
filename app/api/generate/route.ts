@@ -78,71 +78,48 @@ export async function POST(req: NextRequest) {
       console.log(`Using ${rawPosts.length} fresh posts`);
     }
 
-    // Quality-weighted selection with soft diversity
-    const NEWS_SOURCES = new Set(['Guardian', 'BBC', 'Reuters', 'AP', 'Telegraph', 'Times', 'Independent', 'Daily Mail', 'Mirror', 'Sun', 'Forbes', 'Bloomberg', 'CNN', 'Fox']);
-    const SOCIAL_SOURCES = new Set(['YouTube', 'Bluesky', 'Mastodon', 'Twitter', 'Reddit']);
-    const MARKETING_SIGNALS = /buy now|shop now|discount|offer|% off|subscribe|sign up|click here|learn more/i;
-    const OPINION_SIGNALS = /\b(love|hate|think|feel|believe|prefer|wish|hope|can't stand|obsessed|amazing|terrible|awful|brilliant|disappointing)\b/i;
-    const SPECIFIC_SIGNALS = /\b(\d+|yesterday|last week|last year|always|never|every day|sometimes|usually)\b/i;
+    // ── SMART POST SELECTION ──
+    // Score posts by quality, then enforce max 2 per source BEFORE sending to Claude
+    // This guarantees diversity at the input level — Claude can't quote what it doesn't see
 
     function scorePost(p: any): number {
       const text = p.text || '';
-      const source = p.source || '';
+      const type = p.type || '';
       let score = 0;
-
-      // First-person voice — highest priority
-      if (/\bI\b/.test(text)) score += 4;
-      if (/\bmy\b|\bme\b/i.test(text)) score += 2;
-      if (/\bwe\b|\bour\b/i.test(text)) score += 1;
-
-      // Opinion and emotional language
-      if (OPINION_SIGNALS.test(text)) score += 2;
-
-      // Specific detail signals authenticity
-      if (SPECIFIC_SIGNALS.test(text)) score += 1;
-
-      // Source type bonus/penalty
-      if (SOCIAL_SOURCES.has(source)) score += 2;
-      if (p.type === 'youtube') score += 3;
-      if (NEWS_SOURCES.has(source) || p.type === 'newsdata') score -= 2;
-      if (p.type === 'wikipedia' || p.type === 'autocomplete') score -= 3;
-      if (/forum|community|reddit|mumsnet|netmums|thestudentroom|tripadvisor|trustpilot|yelp/i.test(source)) score += 2;
-
-      // Marketing copy penalty
-      if (MARKETING_SIGNALS.test(text)) score -= 4;
-
-      // Length sweet spot — conversational length
-      if (text.length > 80 && text.length < 300) score += 1;
-      if (text.length < 40) score -= 2;
-
+      // First-person voice — most valuable signal
+      if (/\bI\b/.test(text)) score += 5;
+      if (/\b(my|me|we|our)\b/i.test(text)) score += 2;
+      // Opinion and emotion
+      if (/\b(love|hate|think|feel|believe|prefer|amazing|terrible|brilliant|awful|obsessed|disappointed)\b/i.test(text)) score += 2;
+      // Specific authentic detail
+      if (/\b(\d+|yesterday|last week|always|never|every day|usually|tried|bought|switched|started|stopped)\b/i.test(text)) score += 1;
+      // Source quality signals
+      if (type === 'youtube') score += 3;
+      if (type === 'bluesky') score += 2;
+      if (/forum|reddit|mumsnet|tripadvisor|trustpilot/i.test(p.source || '')) score += 2;
+      // Noise penalties
+      if (/buy now|shop now|discount|subscribe|sign up|click here|free delivery/i.test(text)) score -= 5;
+      if (type === 'wikipedia' || type === 'autocomplete') score -= 4;
+      if (text.length < 40) score -= 3;
       return score;
     }
 
-    // Score all posts
-    const scoredPosts = rawPosts.map((p: any) => ({ ...p, _score: scorePost(p) }));
+    // Score and sort all posts
+    const scored = rawPosts
+      .map((p: any) => ({ ...p, _score: scorePost(p) }))
+      .sort((a: any, b: any) => b._score - a._score);
 
-    // Sort by score descending
-    scoredPosts.sort((a: any, b: any) => b._score - a._score);
-
-    // Apply soft diversity: track selected count per source, penalise repetition
-    const selectedSourceCounts: Record<string, number> = {};
+    // Hard cap: max 2 posts per source in what Claude sees
+    const srcCap: Record<string, number> = {};
     const orderedPosts: any[] = [];
-
-    for (const post of scoredPosts) {
-      const src = post.source || 'unknown';
-      const count = selectedSourceCounts[src] || 0;
-      // Apply soft penalty: each post beyond the 3rd from same source loses 1 point
-      const adjustedScore = post._score - Math.max(0, count - 2);
-      if (adjustedScore >= -1) { // Only exclude truly bad posts
-        orderedPosts.push(post);
-        selectedSourceCounts[src] = count + 1;
-      }
+    for (const p of scored) {
+      const src = p.source || 'unknown';
+      srcCap[src] = (srcCap[src] || 0) + 1;
+      if (srcCap[src] <= 2) orderedPosts.push(p);
       if (orderedPosts.length >= 40) break;
     }
 
-    const firstPersonCount = orderedPosts.filter((p: any) => /\bI\b/i.test(p.text || '')).length;
-    const sourceSpread = Object.keys(selectedSourceCounts).length;
-    console.log(`Quality selection: ${orderedPosts.length} posts, ${firstPersonCount} first-person, ${sourceSpread} sources`);
+    console.log(`Selected ${orderedPosts.length} posts from ${Object.keys(srcCap).length} sources. Top sources: ${Object.entries(srcCap).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>k+':'+v).join(', ')}`);
 
     // Build clean numbered post list
     const numberedPosts = orderedPosts.map((p, i) => {
@@ -252,52 +229,7 @@ Return ONLY this JSON with no markdown, no preamble. Use only straight single qu
         throw new Error(`JSON parse failed: ${String(parseErr).slice(0, 100)}`);
       }
     }
-    // Post-process: enforce max 2 quotes per source across ALL themes combined
-    // First collect all verbatims with their source info
-    const MAX_PER_SOURCE = 2;
-    const globalSourceCounts: Record<string, number> = {};
-
-    // Build indexed backup pool of unused high-scoring posts
-    const allUsedNums = new Set(
-      (results.themes || []).flatMap((t: any) =>
-        (t.verbatims || []).map((v: string) => { const m = v.match(/^\[(\d+)\]/); return m ? parseInt(m[1]) : -1; })
-      )
-    );
-    const backupPool = orderedPosts
-      .map((p: any, i: number) => ({ ...p, _num: i + 1 }))
-      .filter((p: any) => !allUsedNums.has(p._num) && (p.text?.length || 0) > 40);
-
-    // Process all themes together to enforce global source limit
-    for (const theme of results.themes || []) {
-      const newVerbatims: string[] = [];
-      for (const v of (theme.verbatims || [])) {
-        const m = v.match(/^\[(\d+)\]/);
-        const postNum = m ? parseInt(m[1]) : -1;
-        const post = postNum > 0 ? orderedPosts[postNum - 1] as any : null;
-        const src = post?.source || 'unknown';
-        globalSourceCounts[src] = (globalSourceCounts[src] || 0) + 1;
-
-        if (globalSourceCounts[src] <= MAX_PER_SOURCE) {
-          newVerbatims.push(v);
-        } else {
-          // Find best replacement from a different source
-          const idx = backupPool.findIndex((p: any) => {
-            const s = p.source || 'unknown';
-            return s !== src && (globalSourceCounts[s] || 0) < MAX_PER_SOURCE;
-          });
-          if (idx >= 0) {
-            const rep = backupPool.splice(idx, 1)[0];
-            const repSrc = rep.source || 'unknown';
-            globalSourceCounts[repSrc] = (globalSourceCounts[repSrc] || 0) + 1;
-            newVerbatims.push(`[${rep._num}] ${cleanText(rep.text)}`);
-          } else {
-            newVerbatims.push(v);
-          }
-        }
-      }
-      theme.verbatims = newVerbatims;
-    }
-    console.log('Source spread:', globalSourceCounts);
+    // Source diversity enforced at input level — no post-processing needed
 
     results.data_source = rawPosts.length > 0 ? 'collected' : 'fresh';
     results.post_count = rawPosts.length;
