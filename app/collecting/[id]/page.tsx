@@ -188,7 +188,7 @@ export default function CollectingPage() {
         </aside>
 
         <main style={s.main}>
-          {isComplete ? (
+          {isComplete && (
             <div style={s.completeSection}>
               <div style={s.completeIcon}>✓</div>
               <h1 style={s.completeTitle}>Collection <em style={{ fontStyle: 'italic', color: '#c8b89a' }}>complete</em></h1>
@@ -227,7 +227,7 @@ export default function CollectingPage() {
             </div>
           )}
 
-          {!generating && isComplete ? null : (
+          {!isComplete && (
             <>
               <div style={s.statusSection}>
                 <div style={s.bigTimer}>
