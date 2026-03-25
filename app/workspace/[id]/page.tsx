@@ -165,15 +165,21 @@ export default function WorkspacePage() {
   const generateFromBuckets = async () => {
     if (ws.buckets.length === 0) return;
     setGenerating(true);
-    await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      body: JSON.stringify({ status: 'collected', workspace_state: ws })
-    });
-    const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ briefId: id, buckets: ws.buckets, posts, starred: ws.starred }) });
-    const data = await res.json();
-    if (data.success) window.location.href = `/results/${id}`;
-    else { setGenerating(false); alert('Generation failed'); }
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ status: 'collected', workspace_state: ws })
+      });
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ briefId: id, buckets: ws.buckets })
+      });
+      const data = await res.json();
+      if (data.success) window.location.href = `/results/${id}`;
+      else { setGenerating(false); alert('Generation failed — try again'); }
+    } catch { setGenerating(false); alert('Something went wrong'); }
   };
 
   // Posts visible in reading stage — from selected clusters
@@ -182,7 +188,7 @@ export default function WorkspacePage() {
     const clusterPostSets = ws.selectedClusters.map(name => clusters.find(c => c.name === name)?.posts || []);
     const allClusterPosts = clusterPostSets.flat();
     return posts.map((p, i) => ({ ...p, _idx: i })).filter(p =>
-      allClusterPosts.some(cp => cp.text === p.text) && !ws.binned.includes(p._idx)
+      allClusterPosts.some(cp => cp.text === p.text) && !ws.binned.includes(i)
     );
   })() : [];
 
