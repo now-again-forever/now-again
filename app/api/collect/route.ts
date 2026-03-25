@@ -173,20 +173,20 @@ function extractConversationLinks(html: string, baseUrl: string): string[] {
   return links.slice(0, 5);
 }
 
-// ── SERP DISCOVERY: Find relevant URLs via Google ──
+// ── SERP DISCOVERY via Tavily (SerpAPI disabled - times out on Vercel) ──
 async function serpDiscover(query: string, market: string, label: string): Promise<string[]> {
-  if (!SERPAPI_KEY) return [];
+  // Use Tavily as our discovery engine instead of SerpAPI
+  if (!TAVILY_API_KEY) return [];
   try {
-    const gl = MARKET_TO_ISO[market] || 'us';
-    const hl = MARKET_TO_LANG[market] || 'en';
-    const simple = simplifyQuery(query);
-    const res = await fetch(
-      `https://serpapi.com/search.json?q=${encodeURIComponent(simple)}&gl=${gl}&hl=${hl}&num=10&api_key=${SERPAPI_KEY}`,
-      { signal: AbortSignal.timeout(15000) }
-    );
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: TAVILY_API_KEY, query: simplifyQuery(query), search_depth: 'basic', max_results: 10, include_raw_content: false }),
+      signal: AbortSignal.timeout(10000)
+    });
     const data = await res.json();
-    return (data.organic_results || []).map((r: any) => r.link).filter(Boolean).slice(0, 10);
-  } catch (e) { console.error('SerpAPI:', e); }
+    return (data.results || []).map((r: any) => r.url).filter(Boolean).slice(0, 10);
+  } catch (e) { console.error('Discovery:', e); }
   return [];
 }
 
