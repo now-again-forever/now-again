@@ -206,7 +206,7 @@ export default function CollectingPage() {
                   });
                   const data = await res.json();
                   if (data.success) {
-                    window.location.href = `/results/${id}`;
+                    window.location.href = `/workspace/${id}`;
                   } else {
                     alert('Generation failed — please try again');
                     setGenerating(false);
