@@ -102,7 +102,17 @@ export default function ResultsPage() {
       const status = await fetchBrief();
       if (status === 'pending' || status === 'collected') {
         startTime.current = Date.now();
-        triggerGeneration();
+
+        // Trigger generation directly — no state guards, just a ref
+        if (!triggeredRef.current) {
+          triggeredRef.current = true;
+          setTriggered(true);
+          fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ briefId: id })
+          }).catch(console.error);
+        }
 
         timerRef.current = setInterval(() => {
           const secs = Math.floor((Date.now() - startTime.current) / 1000);
@@ -118,6 +128,7 @@ export default function ResultsPage() {
           if (s === 'complete') {
             clearInterval(timerRef.current);
             clearInterval(pollRef.current);
+            window.location.reload();
           }
         }, 3000);
       }
@@ -128,7 +139,7 @@ export default function ResultsPage() {
       clearInterval(timerRef.current);
       clearInterval(pollRef.current);
     };
-  }, [id, fetchBrief, triggerGeneration]);
+  }, [id, fetchBrief]);
 
   if (loading) return (
     <div style={s.centred}>
