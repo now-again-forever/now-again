@@ -338,70 +338,110 @@ export default function WorkspacePage() {
           </div>
         </div>
 
-        {/* POST CARDS CANVAS */}
-        <div style={{ overflowY: 'auto', padding: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7, alignContent: 'start' }}>
-          {filteredPosts.map((post) => {
-            const i = post._idx;
-            const starred = ws.starred.includes(i);
-            const binned = ws.binned.includes(i);
-            const bucketColor = getBucketColor(i);
-            const isSelected = selectedForBucket === i;
-            return (
-              <div key={i}
-                style={{
-                  borderRadius: 7,
-                  padding: '9px 10px',
-                  background: starred ? 'rgba(200,184,154,0.05)' : isSelected ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${starred ? 'rgba(200,184,154,0.4)' : isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)'}`,
-                  borderLeft: bucketColor ? `3px solid ${bucketColor}` : starred ? '1px solid rgba(200,184,154,0.4)' : '1px solid rgba(255,255,255,0.05)',
-                  opacity: binned ? 0.15 : 1,
-                  cursor: 'pointer',
-                  transition: 'all 0.12s',
-                  position: 'relative',
-                }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                  <span style={{
-                    fontSize: 9, fontFamily: 'monospace', padding: '1px 5px', borderRadius: 3,
-                    background: post.type === 'youtube' ? 'rgba(220,38,38,0.12)' : post.type === 'bluesky' ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.04)',
-                    color: post.type === 'youtube' ? '#fca5a5' : post.type === 'bluesky' ? '#93c5fd' : 'rgba(255,255,255,0.3)',
-                  }}>
-                    {post.source?.slice(0, 16)}
-                  </span>
-                  <div style={{ display: 'flex', gap: 3 }}>
-                    <button onClick={() => toggleStar(i)} style={{ width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(200,184,154,0.12)', color: starred ? '#c8b89a' : 'rgba(200,184,154,0.3)', cursor: 'pointer', fontSize: 8 }}>
-                      {starred ? '★' : '☆'}
-                    </button>
-                    <button onClick={() => setSelectedForBucket(isSelected ? null : i)} style={{ width: 16, height: 16, borderRadius: '50%', border: 'none', background: isSelected ? 'rgba(200,184,154,0.2)' : 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 8 }}>
-                      +
-                    </button>
-                    <button onClick={() => toggleBin(i)} style={{ width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.2)', cursor: 'pointer', fontSize: 8 }}>
-                      ✕
-                    </button>
+        {/* POST CARDS CANVAS - organised in columns by source type */}
+        <div style={{ overflowX: 'auto', overflowY: 'hidden', display: 'flex', gap: 0, flex: 1 }}>
+          {(() => {
+            const COLUMNS = [
+              { key: 'youtube', label: 'YouTube', color: '#fca5a5', bg: 'rgba(220,38,38,0.08)' },
+              { key: 'bluesky', label: 'Bluesky', color: '#93c5fd', bg: 'rgba(59,130,246,0.08)' },
+              { key: 'web', label: 'Web & forums', color: '#c8b89a', bg: 'rgba(200,184,154,0.06)' },
+              { key: 'news', label: 'News & editorial', color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.02)' },
+            ];
+            const getColKey = (p: any) => {
+              if (p.type === 'youtube') return 'youtube';
+              if (p.type === 'bluesky' || p.type === 'mastodon') return 'bluesky';
+              if (p.type === 'newsdata' || p.type === 'hn') return 'news';
+              return 'web';
+            };
+            return COLUMNS.map(col => {
+              const colPosts = filteredPosts.filter(p => getColKey(p) === col.key);
+              return (
+                <div key={col.key} style={{ width: 220, flexShrink: 0, borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  {/* Column header */}
+                  <div style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.05)', background: col.bg, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, fontWeight: 500, color: col.color }}>{col.label}</span>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', marginLeft: 'auto' }}>{colPosts.length}</span>
                   </div>
-                </div>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5 }}>
-                  {post.text.slice(0, 140)}{post.text.length > 140 ? '...' : ''}
-                </div>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)', marginTop: 5, fontFamily: 'monospace' }}>
-                  {post.country} · {post.timestamp?.slice(0, 10)} · score: {post._score}
-                </div>
+                  {/* Column posts - scrollable */}
+                  <div style={{ overflowY: 'auto', flex: 1, padding: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {colPosts.map((post) => {
+                      const i = post._idx;
+                      const starred = ws.starred.includes(i);
+                      const binned = ws.binned.includes(i);
+                      const bucketColor = getBucketColor(i);
+                      const isSelected = selectedForBucket === i;
+                      return (
+                        <div key={i}
+                          onClick={() => setSelectedForBucket(isSelected ? null : i)}
+                          style={{
+                            borderRadius: 7,
+                            padding: '9px 10px',
+                            background: isSelected ? 'rgba(200,184,154,0.12)' : starred ? 'rgba(200,184,154,0.05)' : 'rgba(255,255,255,0.02)',
+                            border: `1px solid ${isSelected ? 'rgba(200,184,154,0.6)' : starred ? 'rgba(200,184,154,0.35)' : 'rgba(255,255,255,0.05)'}`,
+                            borderLeft: bucketColor ? `3px solid ${bucketColor}` : undefined,
+                            opacity: binned ? 0.12 : 1,
+                            cursor: 'pointer',
+                            transition: 'all 0.12s',
+                            position: 'relative',
+                          }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                            <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>
+                              {post.source?.replace('www.', '').slice(0, 14)}
+                            </span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                              <button onClick={e => { e.stopPropagation(); toggleStar(i); }}
+                                style={{ width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(200,184,154,0.1)', color: starred ? '#c8b89a' : 'rgba(200,184,154,0.25)', cursor: 'pointer', fontSize: 8, flexShrink: 0 }}>
+                                {starred ? '★' : '☆'}
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); toggleBin(i); }}
+                                style={{ width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.15)', cursor: 'pointer', fontSize: 8, flexShrink: 0 }}>
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 10, color: isSelected ? '#f5f3ee' : 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+                            {post.text.slice(0, 120)}{post.text.length > 120 ? '...' : ''}
+                          </div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.12)', marginTop: 5, fontFamily: 'monospace' }}>
+                            {post.country} · score:{post._score}
+                          </div>
+                          {bucketColor && (
+                            <div style={{ marginTop: 4, fontSize: 8, color: bucketColor, fontFamily: 'monospace' }}>
+                              {ws.buckets.find(b => b.id === ws.postBuckets[i])?.name}
+                            </div>
+                          )}
 
-                {/* Bucket picker */}
-                {isSelected && ws.buckets.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#1a1917', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 6, marginTop: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {ws.buckets.map(b => (
-                      <button key={b.id} onClick={() => assignToBucket(i, b.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: ws.postBuckets[i] === b.id ? 'rgba(255,255,255,0.08)' : 'transparent', border: 'none', color: '#f5f3ee', fontSize: 10, padding: '4px 6px', borderRadius: 4, cursor: 'pointer', textAlign: 'left' }}>
-                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: b.color, flexShrink: 0 }} />
-                        {b.name}
-                        {ws.postBuckets[i] === b.id && <span style={{ marginLeft: 'auto', color: b.color }}>✓</span>}
-                      </button>
-                    ))}
+                          {/* Inline bucket picker when selected */}
+                          {isSelected && ws.buckets.length > 0 && (
+                            <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 7, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', marginBottom: 2, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '.06em' }}>Drop into bucket</div>
+                              {ws.buckets.map(b => (
+                                <button key={b.id} onClick={e => { e.stopPropagation(); assignToBucket(i, b.id); }}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: ws.postBuckets[i] === b.id ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${ws.postBuckets[i] === b.id ? b.color : 'transparent'}`, color: '#f5f3ee', fontSize: 9, padding: '4px 7px', borderRadius: 4, cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit' }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color, flexShrink: 0 }} />
+                                  {b.name}
+                                  {ws.postBuckets[i] === b.id && <span style={{ marginLeft: 'auto', color: b.color, fontSize: 8 }}>✓ remove</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {isSelected && ws.buckets.length === 0 && (
+                            <div style={{ marginTop: 7, fontSize: 9, color: 'rgba(255,255,255,0.25)', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 6 }}>
+                              Create a bucket first →
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {colPosts.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 10, color: 'rgba(255,255,255,0.15)' }}>No posts</div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                </div>
+              );
+            });
+          })()}
         </div>
 
         {/* RIGHT PANEL */}
