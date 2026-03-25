@@ -7,40 +7,43 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY!;
 async function updateBrief(id: string, payload: object) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`
-    },
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
     body: JSON.stringify(payload)
   });
   if (!res.ok) console.error('Supabase error:', await res.text());
 }
 
-async function fetchFreshData(brief: any): Promise<string[]> {
-  const posts: string[] = [];
-  const query = (brief.category || '').split(' ').slice(0, 3).join(' ');
+function cleanText(t: string): string {
+  return t
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[""'']/g, '"')
+    .trim()
+    .slice(0, 300);
+}
 
+async function fetchFreshData(brief: any): Promise<any[]> {
+  const posts: any[] = [];
+  const query = (brief.category || '').split(' ').slice(0, 3).join(' ');
   try {
     const [hnRes, bskyRes] = await Promise.all([
       fetch(`https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=25`, { signal: AbortSignal.timeout(5000) }),
       fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(5000) })
     ]);
-
     const hnData = await hnRes.json();
     for (const hit of hnData.hits || []) {
-      if (hit.title) posts.push(`[HN] ${hit.title}`);
+      if (hit.title) posts.push({ text: hit.title, source: 'Hacker News', country: 'Global', timestamp: hit.created_at });
     }
-
     const bskyText = await bskyRes.text();
     if (bskyText.startsWith('{')) {
       const bskyData = JSON.parse(bskyText);
       for (const post of bskyData.posts || []) {
-        if (post.record?.text?.length > 20) posts.push(`[Bluesky] ${post.record.text.slice(0, 200)}`);
+        if (post.record?.text?.length > 20) posts.push({ text: post.record.text, source: 'Bluesky', country: 'Global', timestamp: post.indexedAt });
       }
     }
-  } catch (e) { console.error('Fresh fetch error:', e); }
-
+  } catch (e) { console.error('Fresh fetch:', e); }
   return posts;
 }
 
@@ -56,117 +59,77 @@ export async function POST(req: NextRequest) {
     if (!brief) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
     // Use collected posts if available, otherwise fetch fresh
-    let posts: string[] = [];
-    let dataSource = 'fresh';
-
-    if (brief.collected_posts_full && brief.collected_posts_full.length > 0) {
-      posts = brief.collected_posts_full.slice(0, 60);
-      dataSource = 'collected';
-      console.log(`Using ${posts.length} collected posts (full)`);
-    } else if (brief.collected_posts && brief.collected_posts.length > 0) {
-      posts = brief.collected_posts.slice(0, 60);
-      dataSource = 'collected';
-      console.log(`Using ${posts.length} collected posts`);
+    let rawPosts: any[] = [];
+    if (brief.collected_posts_full?.length > 0) {
+      rawPosts = brief.collected_posts_full.slice(0, 50);
+      console.log(`Using ${rawPosts.length} collected posts`);
+    } else if (brief.collected_posts?.length > 0) {
+      rawPosts = brief.collected_posts.slice(0, 50).map((t: string) => ({ text: t, source: 'collected', country: 'Global' }));
+      console.log(`Using ${rawPosts.length} collected text posts`);
     } else {
-      posts = await fetchFreshData(brief);
-      dataSource = 'fresh';
-      console.log(`Using ${posts.length} fresh posts`);
+      rawPosts = await fetchFreshData(brief);
+      console.log(`Using ${rawPosts.length} fresh posts`);
     }
 
-    // Build source summary for prompt
-    let sourceSummary = '';
-    if (brief.collected_posts_full && Array.isArray(brief.collected_posts_full)) {
-      const sources = [...new Set(brief.collected_posts_full.map((p: any) => p.source))];
-      const countries = [...new Set(brief.collected_posts_full.map((p: any) => p.country).filter((c: string) => c !== 'Global'))];
-      sourceSummary = `\nData collected from: ${sources.slice(0, 8).join(', ')}. Markets represented: ${countries.slice(0, 5).join(', ')}.`;
-    }
-
-    // Build numbered post list with sources for citation
-    const cleanText = (t: string) => t
-      .replace(/&[a-z#0-9]+;/gi, ' ')
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .replace(/["""'']/g, '"')
-      .trim()
-      .slice(0, 300);
-
-    const numberedPosts = posts.slice(0, 50).map((p, i) => {
-      if (typeof p === 'object' && p !== null) {
-        const post = p as any;
-        return `[${i+1}] [${post.source}|${post.country}|${post.timestamp?.slice(0,10)||''}] ${cleanText(post.text)}`;
-      }
-      return `[${i+1}] ${cleanText(String(p))}`;
+    // Build clean numbered post list
+    const numberedPosts = rawPosts.map((p, i) => {
+      const text = cleanText(p.text || String(p));
+      const source = p.source || 'unknown';
+      const country = p.country || 'Global';
+      const date = (p.timestamp || '').slice(0, 10);
+      return `[${i + 1}] [${source}|${country}${date ? '|' + date : ''}] ${text}`;
     });
+
+    const sourceSummary = rawPosts.length > 0
+      ? `\nData from: ${[...new Set(rawPosts.map((p: any) => p.source))].slice(0, 6).join(', ')}.`
+      : '';
 
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01'
-      },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-haiku-4-5',
         max_tokens: 2500,
         messages: [{
           role: 'user',
-          content: `You are a senior cultural insight analyst at NOW-AGAIN, a premium cultural intelligence platform.
+          content: `You are a senior cultural insight analyst at NOW-AGAIN.
 
 Client: ${brief.brand}
 Category: ${brief.category}
 Markets: ${(brief.markets || []).join(', ') || 'Global'}
 Question: "${brief.question}"${sourceSummary}
 
-Here are ${numberedPosts.length} real collected posts, each tagged with [source|country|date]:
+Here are ${numberedPosts.length} real collected posts tagged [source|country|date]:
 ${numberedPosts.join('\n')}
 
-Analyse these through the lens of the client's question. Identify 4 distinct cultural themes.
+Identify 4 distinct cultural themes relevant to the question.
 
-CRITICAL RULES FOR VERBATIMS:
-- Verbatims MUST be real text copied exactly from the posts above
-- Each verbatim must include the post number in brackets, e.g. "[3] actual text from that post"
-- Do NOT invent or paraphrase quotes — only use text that genuinely appears above
-- If a post is not relevant enough to quote, skip it
+For each theme provide:
+- name: evocative 2-4 words (e.g. "Quiet Local Pride")
+- summary: 2 sentences connecting to the question
+- drivers: exactly 2 from [Creativity, Experiences, Emotion, Engagement, Relationships, Responsibility, Wellbeing, Simplicity, Resilience, Control, Enhancement, Power, Achievement, Exploration, Individuality, Extremes]
+- verbatims: exactly 4 quotes, each starting with the post number like "[3] actual text"
+- implications: exactly 3 strategic implications for ${brief.brand}
 
-For each theme:
-- Evocative 2-4 word name (e.g. "Quiet Local Pride", "The Authenticity Gap")
-- 2-sentence cultural summary directly addressing the question
-- 2 human drivers from: Creativity, Experiences, Emotion, Engagement, Relationships, Responsibility, Wellbeing, Simplicity, Resilience, Control, Enhancement, Power, Achievement, Exploration, Individuality, Extremes
-- 4 verbatim quotes from the posts above (with post number prefix)
-- 3 strategic implications for ${brief.brand}
-
-Return ONLY valid JSON, no markdown:
-{"themes":[{"name":"string","summary":"string","drivers":["string","string"],"verbatims":["[N] exact quote","[N] exact quote","[N] exact quote","[N] exact quote"],"implications":["string","string","string"]}]}`
+Return ONLY this JSON with no markdown, no preamble:
+{"themes":[{"name":"","summary":"","drivers":["",""],"verbatims":["","","",""],"implications":["","",""]}]}`
         }]
       })
     });
 
     const claudeData = await claudeRes.json();
-    const raw = claudeData.content?.[0]?.text || '';
-    console.log('Claude preview:', raw.slice(0, 200));
+    const raw = (claudeData.content?.[0]?.text || '').trim();
+    console.log('Claude preview:', raw.slice(0, 150));
 
-    // Robust JSON extraction
-    let results;
-    let jsonStr = raw.replace(/```json|```/g, '').trim();
-    // Find outermost { } by counting braces
-    const start = jsonStr.indexOf('{');
-    if (start === -1) throw new Error('No JSON found');
-    let depth = 0;
-    let end = -1;
-    for (let i = start; i < jsonStr.length; i++) {
-      if (jsonStr[i] === '{') depth++;
-      else if (jsonStr[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-    }
-    if (end === -1) throw new Error('Malformed JSON');
-    jsonStr = jsonStr.slice(start, end + 1)
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ');
-    results = JSON.parse(jsonStr);
-    results.data_source = dataSource;
-    results.post_count = posts.length;
+    // Extract JSON robustly
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON in Claude response');
+    const results = JSON.parse(match[0]);
+    results.data_source = rawPosts.length > 0 ? 'collected' : 'fresh';
+    results.post_count = rawPosts.length;
 
-    await updateBrief(briefId, { status: 'complete', results, post_count: posts.length });
-    console.log('Saved! Source:', dataSource, 'Posts:', posts.length);
+    await updateBrief(briefId, { status: 'complete', results, post_count: rawPosts.length });
+    console.log('Done! Posts:', rawPosts.length);
     return NextResponse.json({ success: true });
 
   } catch (err) {
