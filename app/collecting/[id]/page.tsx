@@ -160,14 +160,25 @@ export default function CollectingPage() {
               </p>
               <button style={s.btnPrimary} disabled={generating} onClick={async () => {
                 setGenerating(true);
-                await fetch('/api/generate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ briefId: id })
-                });
-                window.location.href = `/results/${id}`;
+                try {
+                  const res = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ briefId: id })
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    window.location.href = `/results/${id}`;
+                  } else {
+                    alert('Generation failed — please try again');
+                    setGenerating(false);
+                  }
+                } catch (e) {
+                  alert('Something went wrong — please try again');
+                  setGenerating(false);
+                }
               }}>
-                {generating ? 'Generating insights...' : 'Generate insights →'}
+                {generating ? 'Analysing conversations...' : 'Generate insights →'}
               </button>
             </div>
           ) : (

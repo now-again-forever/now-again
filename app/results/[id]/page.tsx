@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -52,69 +52,16 @@ export default function ResultsPage() {
   const [brief, setBrief] = useState<Brief | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTheme, setActiveTheme] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [failed, setFailed] = useState(false);
-  const startTime = useRef(Date.now());
-  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  const didTrigger = useRef(false);
 
   useEffect(() => {
     if (!id) return;
-
-    const run = async () => {
-      try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-        });
-        const data = await res.json();
-        const brief = data[0];
-        if (!brief) { setLoading(false); return; }
-        setBrief(brief);
-        setLoading(false);
-
-        if (brief.status === 'complete') return;
-
-        if ((brief.status === 'pending' || brief.status === 'collected') && !didTrigger.current) {
-          didTrigger.current = true;
-          startTime.current = Date.now();
-          fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ briefId: id })
-          }).catch(console.error);
-
-          timerRef.current = setInterval(() => {
-            const secs = Math.floor((Date.now() - startTime.current) / 1000);
-            setElapsed(secs);
-            setCurrentStep(Math.min(Math.floor(secs / 7), STEPS.length - 1));
-            if (secs > 180) setFailed(true);
-          }, 1000);
-
-          pollRef.current = setInterval(async () => {
-            const r = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=status`, {
-              headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
-            const d = await r.json();
-            if (d[0]?.status === 'complete') {
-              clearInterval(timerRef.current);
-              clearInterval(pollRef.current);
-              window.location.reload();
-            }
-          }, 3000);
-        }
-      } catch (e) {
-        console.error(e);
-        setLoading(false);
-      }
-    };
-
-    run();
-    return () => {
-      clearInterval(timerRef.current);
-      clearInterval(pollRef.current);
-    };
+    fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=*`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    })
+      .then(r => r.json())
+      .then(data => { if (data[0]) setBrief(data[0]); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, [id]);
 
   if (loading) return (
@@ -131,93 +78,19 @@ export default function ResultsPage() {
   );
 
   if (brief.status !== 'complete') return (
-    <div style={s.loadingPage}>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-        @keyframes slideIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=DM+Mono&display=swap');
-      `}</style>
-
-      <div style={s.loadingHeader}>
-        <div style={s.logo}>now<span style={s.logoAccent}>—</span>again</div>
-      </div>
-
-      <div style={s.loadingBody}>
-        <div style={s.loadingLeft}>
-          <div style={s.bigSpinnerWrap}>
-            <svg width="80" height="80" viewBox="0 0 80 80" style={{ animation: 'spin 2s linear infinite' }}>
-              <circle cx="40" cy="40" r="36" fill="none" stroke="#ede9e0" strokeWidth="2" />
-              <circle cx="40" cy="40" r="36" fill="none" stroke="#2d4a3e" strokeWidth="2"
-                strokeDasharray="60 165" strokeLinecap="round" />
-            </svg>
-            <div style={s.elapsedBadge}>{elapsed}s</div>
-          </div>
-
-          <h1 style={s.loadingTitle}>Listening to<br /><em style={{ fontStyle: 'italic', color: '#c8b89a' }}>culture...</em></h1>
-
-          <p style={s.loadingSubtitle}>
-            Analysing <strong>{brief?.post_count || 0} collected conversations</strong> for <strong>{brief?.brand}</strong> across {(brief?.markets || []).join(', ') || 'global'} markets.
-          </p>
-
-          {failed ? (
-            <div style={s.failedBox}>
-              <p style={s.failedText}>This is taking longer than expected.</p>
-              <button style={s.retryBtn} onClick={() => window.location.reload()}>Retry →</button>
-            </div>
-          ) : (
-            <div style={s.progressBarWrap}>
-              <div style={s.progressBarTrack}>
-                <div style={{ ...s.progressBarFill, width: `${Math.min((elapsed / 60) * 100, 95)}%` }} />
-              </div>
-              <span style={s.progressLabel}>
-                {elapsed < 60 ? `~${Math.max(60 - elapsed, 5)}s remaining` : 'Almost done...'}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div style={s.loadingRight}>
-          <div style={s.stepsCard}>
-            <div style={s.stepsLabel}>What we&apos;re doing</div>
-            {STEPS.map((step, i) => {
-              const isDone = i < currentStep;
-              const isActive = i === currentStep;
-              return (
-                <div key={i} style={{ ...s.stepRow, opacity: i > currentStep + 1 ? 0.3 : 1 }}>
-                  <div style={{ ...s.stepDot, background: isDone ? '#2d4a3e' : isActive ? '#c8b89a' : '#e0ddd5' }}>
-                    {isDone && <span style={{ color: 'white', fontSize: '10px' }}>✓</span>}
-                  </div>
-                  <div>
-                    <div style={{ ...s.stepLabel, color: isActive ? '#0e0d0b' : isDone ? '#2d4a3e' : '#aaa' }}>
-                      {step.label}
-                    </div>
-                    {isActive && (
-                      <div style={{ ...s.stepDetail, animation: 'slideIn 0.3s ease' }}>
-                        {step.detail}
-                      </div>
-                    )}
-                  </div>
-                  {isActive && (
-                    <div style={s.activeIndicator}>
-                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#c8b89a', animation: 'pulse 1s ease-in-out infinite' }} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={s.briefPreview}>
-            <div style={s.briefPreviewLabel}>Brief</div>
-            <p style={s.briefPreviewQ}>&ldquo;{brief.question}&rdquo;</p>
-          </div>
-        </div>
-      </div>
+    <div style={{ minHeight: '100vh', background: '#0e0d0b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1.5rem', fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ fontFamily: 'Georgia, serif', fontSize: '1.1rem', color: '#f5f3ee' }}>now<span style={{ color: '#c8b89a' }}>—</span>again</div>
+      <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
+        {brief.status === 'collecting' ? 'Still collecting data...' : 'Insights not yet generated.'}
+      </p>
+      <button
+        style={{ background: '#f5f3ee', color: '#0e0d0b', border: 'none', padding: '0.9rem 2rem', borderRadius: '6px', fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+        onClick={() => window.location.href = `/collecting/${id}`}>
+        ← Back to collection
+      </button>
     </div>
   );
 
-  const themes = brief.results?.themes || [];
 
   return (
     <div style={s.page}>
