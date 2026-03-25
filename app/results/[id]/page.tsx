@@ -6,6 +6,14 @@ import { useParams } from 'next/navigation';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+interface VerbatimSource {
+  text: string;
+  source?: string;
+  url?: string;
+  country?: string;
+  postIndex?: number;
+}
+
 interface Theme {
   name: string;
   summary: string;
@@ -159,12 +167,33 @@ export default function ResultsPage() {
               <div>
                 <div style={s.sectionLabel}>What people are saying</div>
                 <div style={s.verbatimsGrid}>
-                  {themes[activeTheme].verbatims.map((v, i) => (
-                    <div key={i} style={s.verbatimCard}>
-                      <div style={s.verbatimQuote}>&ldquo;</div>
-                      <p style={s.verbatimText}>{v}</p>
-                    </div>
-                  ))}
+                  {themes[activeTheme].verbatims.map((v, i) => {
+                    // Parse post reference like "[3] text" to find source
+                    const postMatch = v.match(/^\[(\d+)\]\s*/);
+                    const postIndex = postMatch ? parseInt(postMatch[1]) - 1 : -1;
+                    const cleanText = v.replace(/^\[\d+\]\s*/, '');
+                    const fullPost = brief?.collected_posts_full?.[postIndex] as any;
+                    const source = fullPost?.source;
+                    const url = fullPost?.url;
+                    const country = fullPost?.country;
+                    return (
+                      <div key={i} style={s.verbatimCard}>
+                        <div style={s.verbatimQuote}>&ldquo;</div>
+                        <p style={s.verbatimText}>{cleanText}</p>
+                        {(source || country) && (
+                          <div style={s.verbatimMeta}>
+                            {url ? (
+                              <a href={url} target="_blank" rel="noopener noreferrer" style={s.verbatimSource}>
+                                {source}{country && country !== 'Global' ? ` · ${country}` : ''}
+                              </a>
+                            ) : (
+                              <span style={s.verbatimSourcePlain}>{source}{country && country !== 'Global' ? ` · ${country}` : ''}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -264,7 +293,10 @@ const s: Record<string, React.CSSProperties> = {
   verbatimsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' },
   verbatimCard: { background: 'white', border: '1px solid #ede9e0', borderRadius: '10px', padding: '1.25rem' },
   verbatimQuote: { fontFamily: 'Georgia, serif', fontSize: '2.5rem', color: '#ede9e0', lineHeight: 1, marginBottom: '0.25rem' },
-  verbatimText: { fontSize: '0.875rem', lineHeight: 1.6, color: '#444', fontStyle: 'italic' },
+  verbatimText: { fontSize: '0.875rem', lineHeight: 1.6, color: '#444', fontStyle: 'italic', marginBottom: '0.75rem' },
+  verbatimMeta: { borderTop: '1px solid #f0ede8', paddingTop: '0.6rem', marginTop: 'auto' },
+  verbatimSource: { fontSize: '0.72rem', color: '#2d4a3e', fontFamily: 'monospace', textDecoration: 'none', cursor: 'pointer' },
+  verbatimSourcePlain: { fontSize: '0.72rem', color: '#aaa', fontFamily: 'monospace' },
   implicationsBlock: { background: 'white', border: '1px solid #ede9e0', borderRadius: '10px', overflow: 'hidden' },
   implicationRow: { display: 'flex', gap: '1rem', padding: '1rem 1.25rem', alignItems: 'flex-start' },
   implicationArrow: { color: '#2d4a3e', fontWeight: 500, flexShrink: 0, marginTop: '2px' },
