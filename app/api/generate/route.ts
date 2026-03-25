@@ -110,11 +110,25 @@ ${numberedPosts.join('\n')}
 
 Identify 4 distinct cultural themes relevant to the question.
 
-IMPORTANT RULES:
-- For verbatims: select quotes from DIFFERENT sources — do not pick all quotes from the same source
-- Prefer quotes from web sources, blogs, and forums over Hacker News when possible
-- Each verbatim must start with the post number like "[3] actual text copied exactly"
+VERBATIM SELECTION — THIS IS THE MOST IMPORTANT PART:
+
+Your top priority is finding quotes where a real person speaks in first person — "I", "me", "my", "we". These are the most valuable.
+
+Priority order for selecting verbatims:
+1. FIRST PERSON (highest priority): "I stopped buying...", "My family always...", "We tried this and...", "I can't believe..."
+2. SECOND PERSON / DIRECT VOICE: "You should...", "Try this...", direct recommendations from real people
+3. FORUM / COMMUNITY VOICE: opinions, debates, questions from real people in comment sections or forums
+4. YOUTUBE COMMENTS: reactions, personal experiences from video viewers
+5. SOCIAL MEDIA: Bluesky, personal blog posts
+6. LAST RESORT ONLY: news articles or Wikipedia — only if nothing better exists
+
+STRICT RULES:
+- Maximum 1 quote per source domain
+- Never quote journalists writing about people — only quote actual people
+- Each verbatim must start with the post number like "[3] actual quote"
 - Only use text that genuinely appears in the posts above
+- A quote like "I went to McDonald's with friends and had sparkling water to boycott" is perfect
+- A quote like "According to analysts, consumers are increasingly..." is NOT acceptable
 
 For each theme provide:
 - name: evocative 2-4 words (e.g. "Quiet Local Pride")
