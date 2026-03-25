@@ -21,7 +21,7 @@ function cleanText(t: string): string {
     .replace(/\s+/g, ' ')
     .replace(/[""'']/g, '"')
     .trim()
-    .slice(0, 300);
+    .slice(0, 200);
 }
 
 async function fetchFreshData(brief: any): Promise<any[]> {
@@ -61,10 +61,10 @@ export async function POST(req: NextRequest) {
     // Use collected posts if available, otherwise fetch fresh
     let rawPosts: any[] = [];
     if (brief.collected_posts_full?.length > 0) {
-      rawPosts = brief.collected_posts_full.slice(0, 50);
+      rawPosts = brief.collected_posts_full.slice(0, 30);
       console.log(`Using ${rawPosts.length} collected posts`);
     } else if (brief.collected_posts?.length > 0) {
-      rawPosts = brief.collected_posts.slice(0, 50).map((t: string) => ({ text: t, source: 'collected', country: 'Global' }));
+      rawPosts = brief.collected_posts.slice(0, 30).map((t: string) => ({ text: t, source: 'collected', country: 'Global' }));
       console.log(`Using ${rawPosts.length} collected text posts`);
     } else {
       rawPosts = await fetchFreshData(brief);
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 2500,
         messages: [{
           role: 'user',
