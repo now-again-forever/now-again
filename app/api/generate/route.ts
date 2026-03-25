@@ -18,11 +18,10 @@ function cleanText(t: string): string {
     .replace(/<[^>]+>/g, ' ')
     .replace(/&[a-z#0-9]+;/gi, ' ')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
-    .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, "'")
-    .replace(/[\u2013\u2014\u2012\u2015]/g, '-')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, "'")
+    .replace(/[\u2013\u2014]/g, '-')
     .replace(/\u2026/g, '...')
-    .replace(/\u2022/g, '-')
     .replace(/"/g, "'")
     .replace(/\\/g, ' ')
     .replace(/[\[\]{}]/g, ' ')
@@ -31,26 +30,51 @@ function cleanText(t: string): string {
     .slice(0, 220);
 }
 
+function scorePost(p: any): number {
+  const text = p.text || '';
+  const type = p.type || '';
+  const source = p.source || '';
+  let score = 0;
+  if (/\bI\b/.test(text)) score += 5;
+  if (/\b(my|me|we|our)\b/i.test(text)) score += 2;
+  if (/\b(love|hate|think|feel|believe|prefer|amazing|terrible|brilliant|awful|obsessed|disappointed|tried|bought)\b/i.test(text)) score += 2;
+  if (/\b(\d+|yesterday|last week|always|never|every day|usually|started|stopped|switched)\b/i.test(text)) score += 1;
+  if (type === 'youtube') score += 4;
+  if (type === 'bluesky') score += 2;
+  if (/forum|reddit|mumsnet|tripadvisor|trustpilot/i.test(source)) score += 2;
+  if (/buy now|shop now|discount|subscribe|sign up|click here|free delivery|privacy|cookie/i.test(text)) score -= 5;
+  if (type === 'wikipedia' || type === 'autocomplete') score -= 4;
+  if (text.length < 40) score -= 3;
+  return score;
+}
+
+function isNonEnglish(text: string): boolean {
+  const spanishWords = /\b(que|con|para|una|los|las|del|por|como|pero|este|esta|todo|también|cuando|sobre|entre|después|antes|donde|porque|aunque|quiero|tengo|puedo|hace|muy|más|está|son|hay|fue|era|han|ser|estar|tener|hacer|decir|ver|saber|querer|llegar|pasar|deber|poner|parecer|quedar|creer|hablar|llevar|dejar|seguir|encontrar|llamar|venir|pensar|salir|volver|tomar|conocer|vivir|sentir|tratar|mirar|contar|empezar|esperar|buscar|existir|entrar|trabajar)\b/i;
+  const frenchWords = /\b(que|les|des|est|dans|avec|pour|sur|par|pas|plus|vous|nous|ils|elle|très|bien|comme|mais|donc|car|je|il|la|le|un|une|du|au|aux|ce|se|on|y|en|ne|qui|lui|me|te|si|ou|et|être|avoir|faire|dit)\b/i;
+  const accentedChars = /[àáâãäçèéêëìíîïñòóôõöùúûüýÀÁÂÃÄÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ]/;
+  return accentedChars.test(text) || spanishWords.test(text) || frenchWords.test(text);
+}
+
+async function callClaude(prompt: string, maxTokens: number = 2500): Promise<string> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] })
+  });
+  const data = await res.json();
+  return data.content?.[0]?.text || '';
+}
+
 async function fetchFreshData(brief: any): Promise<any[]> {
   const posts: any[] = [];
   const query = (brief.category || '').split(' ').slice(0, 3).join(' ');
   try {
-    const [hnRes, bskyRes] = await Promise.all([
-      fetch(`https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=25`, { signal: AbortSignal.timeout(5000) }),
-      fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(5000) })
-    ]);
-    const hnData = await hnRes.json();
-    for (const hit of hnData.hits || []) {
-      if (hit.title) posts.push({ text: hit.title, source: 'Hacker News', country: 'Global', timestamp: hit.created_at });
+    const res = await fetch(`https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=25`, { signal: AbortSignal.timeout(5000) });
+    const data = await res.json();
+    for (const hit of data.hits || []) {
+      if (hit.title) posts.push({ text: hit.title, source: 'Hacker News', country: 'Global', type: 'hn' });
     }
-    const bskyText = await bskyRes.text();
-    if (bskyText.startsWith('{')) {
-      const bskyData = JSON.parse(bskyText);
-      for (const post of bskyData.posts || []) {
-        if (post.record?.text?.length > 20) posts.push({ text: post.record.text, source: 'Bluesky', country: 'Global', timestamp: post.indexedAt });
-      }
-    }
-  } catch (e) { console.error('Fresh fetch:', e); }
+  } catch { }
   return posts;
 }
 
@@ -65,225 +89,118 @@ export async function POST(req: NextRequest) {
     const brief = (await briefRes.json())[0];
     if (!brief) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-    // Use collected posts if available, otherwise fetch fresh
+    // Get raw posts
     let rawPosts: any[] = [];
     if (brief.collected_posts_full?.length > 0) {
-      rawPosts = brief.collected_posts_full.slice(0, 30);
+      rawPosts = brief.collected_posts_full;
       console.log(`Using ${rawPosts.length} collected posts`);
     } else if (brief.collected_posts?.length > 0) {
-      rawPosts = brief.collected_posts.slice(0, 30).map((t: string) => ({ text: t, source: 'collected', country: 'Global' }));
-      console.log(`Using ${rawPosts.length} collected text posts`);
+      rawPosts = brief.collected_posts.map((t: string) => ({ text: t, source: 'collected', country: 'Global', type: 'web' }));
     } else {
       rawPosts = await fetchFreshData(brief);
-      console.log(`Using ${rawPosts.length} fresh posts`);
     }
 
-    // ── SMART POST SELECTION ──
-    // Score posts by quality, then enforce max 2 per source BEFORE sending to Claude
-    // This guarantees diversity at the input level — Claude can't quote what it doesn't see
-
-    function scorePost(p: any): number {
-      const text = p.text || '';
-      const type = p.type || '';
-      let score = 0;
-      // First-person voice — most valuable signal
-      if (/\bI\b/.test(text)) score += 5;
-      if (/\b(my|me|we|our)\b/i.test(text)) score += 2;
-      // Opinion and emotion
-      if (/\b(love|hate|think|feel|believe|prefer|amazing|terrible|brilliant|awful|obsessed|disappointed)\b/i.test(text)) score += 2;
-      // Specific authentic detail
-      if (/\b(\d+|yesterday|last week|always|never|every day|usually|tried|bought|switched|started|stopped)\b/i.test(text)) score += 1;
-      // Source quality signals
-      if (type === 'youtube') score += 3;
-      if (type === 'bluesky') score += 2;
-      if (/forum|reddit|mumsnet|tripadvisor|trustpilot/i.test(p.source || '')) score += 2;
-      // Noise penalties
-      if (/buy now|shop now|discount|subscribe|sign up|click here|free delivery/i.test(text)) score -= 5;
-      if (type === 'wikipedia' || type === 'autocomplete') score -= 4;
-      if (text.length < 40) score -= 3;
-      return score;
-    }
-
-    // Score and sort all posts
+    // Score all posts
     const scored = rawPosts
       .map((p: any) => ({ ...p, _score: scorePost(p) }))
       .sort((a: any, b: any) => b._score - a._score);
 
-    // Hard cap: max 2 posts per source in what Claude sees
+    // Select top posts with hard cap of 2 per source
     const srcCap: Record<string, number> = {};
-    const orderedPosts: any[] = [];
+    const selectedPosts: any[] = [];
     for (const p of scored) {
       const src = p.source || 'unknown';
       srcCap[src] = (srcCap[src] || 0) + 1;
-      if (srcCap[src] <= 2) orderedPosts.push(p);
-      if (orderedPosts.length >= 40) break;
+      if (srcCap[src] <= 2) selectedPosts.push(p);
+      if (selectedPosts.length >= 40) break;
     }
 
-    console.log(`Selected ${orderedPosts.length} posts from ${Object.keys(srcCap).length} sources. Top sources: ${Object.entries(srcCap).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>k+':'+v).join(', ')}`);
+    const sourceList = [...new Set(selectedPosts.map((p: any) => p.source))];
+    console.log(`Selected ${selectedPosts.length} posts from ${sourceList.length} sources: ${sourceList.slice(0, 8).join(', ')}`);
 
-    // Build clean numbered post list
-    const numberedPosts = orderedPosts.map((p, i) => {
-      const text = cleanText(p.text || String(p));
-      const source = p.source || 'unknown';
+    // Build numbered post list for Claude
+    const numberedPosts = selectedPosts.map((p, i) => {
+      const text = cleanText(p.text || '');
+      const src = p.source || 'unknown';
       const country = p.country || 'Global';
-      const date = (p.timestamp || '').slice(0, 10);
-      return `[${i + 1}] [${source}|${country}${date ? '|' + date : ''}] ${text}`;
+      return `[${i + 1}] [${src}|${country}] ${text}`;
     });
 
-    const sourceSummary = orderedPosts.length > 0
-      ? `\nData from: ${[...new Set(orderedPosts.map((p: any) => p.source))].slice(0, 6).join(', ')}.`
-      : '';
-
-    // Group posts by source type for diversity tracking
-    const sourceTypes = rawPosts.map((p: any) => p.source || 'unknown');
-    const uniqueSources = [...new Set(sourceTypes)];
-
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 2500,
-        messages: [{
-          role: 'user',
-          content: `You are a senior cultural insight analyst at NOW-AGAIN.
+    // Generate themes
+    const analysisPrompt = `You are a senior cultural insight analyst at NOW-AGAIN.
 
 Client: ${brief.brand}
 Category: ${brief.category}
 Markets: ${(brief.markets || []).join(', ') || 'Global'}
-Question: "${brief.question}"${sourceSummary}
+Question: "${brief.question}"
+Sources: ${sourceList.slice(0, 6).join(', ')}
 
-Sources available: ${uniqueSources.join(', ')}
-
-Here are ${numberedPosts.length} real collected posts tagged [source|country|date]:
+${numberedPosts.length} real collected posts:
 ${numberedPosts.join('\n')}
 
-Identify 4 distinct cultural themes relevant to the question.
+Identify 4 distinct cultural themes. For verbatims, prioritise first-person quotes ("I", "my", "me") above all else. Select from DIFFERENT source domains — max 1 quote per domain.
 
-VERBATIM SELECTION — THIS IS THE MOST IMPORTANT PART:
-
-Your top priority is finding quotes where a real person speaks in first person — "I", "me", "my", "we". These are the most valuable.
-
-Priority order for selecting verbatims:
-1. FIRST PERSON (highest priority): "I stopped buying...", "My family always...", "We tried this and...", "I can't believe..."
-2. SECOND PERSON / DIRECT VOICE: "You should...", "Try this...", direct recommendations from real people
-3. FORUM / COMMUNITY VOICE: opinions, debates, questions from real people in comment sections or forums
-4. YOUTUBE COMMENTS: reactions, personal experiences from video viewers
-5. SOCIAL MEDIA: Bluesky, personal blog posts
-6. LAST RESORT ONLY: news articles or Wikipedia — only if nothing better exists
-
-STRICT RULES:
-- Maximum 1 quote per source domain
-- Never quote journalists writing about people — only quote actual people
-- Each verbatim must start with the post number like "[3] actual quote"
-- Only use text that genuinely appears in the posts above
-- TRANSLATE all verbatims into English if they are in another language — add (translated from Spanish) or similar in brackets after
-- A quote like "I went to McDonald's with friends and had sparkling water to boycott" is perfect
-- A quote like "According to analysts, consumers are increasingly..." is NOT acceptable
-
-For each theme provide:
-- name: evocative 2-4 words (e.g. "Quiet Local Pride")
-- summary: 2 rich sentences connecting to the question and the market context
+For each theme:
+- name: evocative 2-4 words
+- summary: 2 sentences addressing the question
 - drivers: exactly 2 from [Creativity, Experiences, Emotion, Engagement, Relationships, Responsibility, Wellbeing, Simplicity, Resilience, Control, Enhancement, Power, Achievement, Exploration, Individuality, Extremes]
-- verbatims: exactly 4 quotes from DIFFERENT sources, each starting with "[N] "
+- verbatims: exactly 4 quotes, each starting with post number like "[3] text here"
 - implications: exactly 3 strategic implications for ${brief.brand}
 
-Return ONLY this JSON with no markdown, no preamble. Use only straight single quotes inside strings, never double quotes. Keep all string values short and clean:
-{"themes":[{"name":"","summary":"","drivers":["",""],"verbatims":["","","",""],"implications":["","",""]}]}`
-        }]
-      })
-    });
+Return ONLY valid JSON, no markdown:
+{"themes":[{"name":"","summary":"","drivers":["",""],"verbatims":["","","",""],"implications":["","",""]}]}`;
 
-    const claudeData = await claudeRes.json();
-    const raw = (claudeData.content?.[0]?.text || '').trim();
+    const raw = (await callClaude(analysisPrompt)).trim();
     console.log('Claude preview:', raw.slice(0, 150));
 
-    // Extract JSON robustly
-    console.log('Full Claude response:', raw.slice(0, 500));
-    if (!raw || raw.length === 0) throw new Error('Empty Claude response');
-
-    // Extract JSON and sanitize
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error(`No JSON found. Got: ${raw.slice(0, 200)}`);
+    if (!match) throw new Error(`No JSON found: ${raw.slice(0, 200)}`);
 
-    let jsonStr = match[0];
-    // Remove control characters that break JSON parsing
-    jsonStr = jsonStr
+    let jsonStr = match[0]
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
       .replace(/\t/g, ' ')
       .replace(/\r/g, ' ');
 
-    let results;
+    let results: any;
     try {
       results = JSON.parse(jsonStr);
-    } catch (parseErr) {
-      // Try to fix common JSON issues - unescaped quotes in strings
-      console.log('JSON parse failed, attempting repair...');
-      const repaired = jsonStr
-        .replace(/([^\\])"([^"]*?)"/g, (m, p1, p2) => p1 + '"' + p2.replace(/"/g, '\\"') + '"')
-        .replace(/\n/g, ' ')
-        .replace(/\r/g, ' ');
-      try {
-        results = JSON.parse(repaired);
-      } catch {
-        throw new Error(`JSON parse failed: ${String(parseErr).slice(0, 100)}`);
-      }
+    } catch {
+      jsonStr = jsonStr.replace(/\n/g, ' ').replace(/\r/g, ' ');
+      results = JSON.parse(jsonStr);
     }
-    // Source diversity enforced at input level — no post-processing needed
 
     // Translate any non-English verbatims
-    const isLikelyNonEnglish = (text: string): boolean => {
-      // Simple heuristic: check for common non-English characters or words
-      const nonEnglishChars = /[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿÀ-ɏ]/;
-      const spanishWords = /\b(que|con|para|una|los|las|del|por|como|pero|más|este|esta|todo|también|cuando|sobre|entre|hasta|desde|hacia|durante|después|antes|donde|quien|cuanto|porque|aunque)\b/i;
-      const frenchWords = /\b(que|les|des|est|dans|avec|pour|sur|par|pas|plus|vous|nous|ils|elle|être|avoir|faire|dit|très|bien|comme|mais|donc|car|si|ou|et|je|il|la|le|un|une|du|au|aux)\b/i;
-      return nonEnglishChars.test(text) || spanishWords.test(text) || frenchWords.test(text);
-    };
-
-    // Collect all non-English verbatims for batch translation
-    const toTranslate: { themeIdx: number; verbIdx: number; text: string }[] = [];
+    const toTranslate: { ti: number; vi: number; text: string }[] = [];
     (results.themes || []).forEach((theme: any, ti: number) => {
       (theme.verbatims || []).forEach((v: string, vi: number) => {
-        const clean = v.replace(/^\[\d+\]\s*/, '');
-        if (isLikelyNonEnglish(clean)) {
-          toTranslate.push({ themeIdx: ti, verbIdx: vi, text: clean });
-        }
+        const text = v.replace(/^\[\d+\]\s*/, '');
+        if (isNonEnglish(text)) toTranslate.push({ ti, vi, text });
       });
     });
 
     if (toTranslate.length > 0) {
-      console.log(`Translating ${toTranslate.length} non-English verbatims...`);
+      console.log(`Translating ${toTranslate.length} non-English verbatims`);
       try {
-        const transRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5',
-            max_tokens: 500,
-            messages: [{
-              role: 'user',
-              content: `Translate each of these quotes to natural English. Return ONLY a JSON array of translated strings in the same order, no other text:
-${JSON.stringify(toTranslate.map(t => t.text))}`
-            }]
-          })
-        });
-        const transData = await transRes.json();
-        const transRaw = transData.content?.[0]?.text || '[]';
-        const translations = JSON.parse(transRaw.replace(/\`\`\`json|\`\`\`/g, '').trim());
-        toTranslate.forEach((item, i) => {
-          if (translations[i]) {
-            const prefix = results.themes[item.themeIdx].verbatims[item.verbIdx].match(/^\[\d+\]\s*/)?.[0] || '';
-            results.themes[item.themeIdx].verbatims[item.verbIdx] = `${prefix}${translations[i]} (translated)`;
-          }
-        });
-      } catch (e) { console.error('Translation error:', e); }
+        const transPrompt = `Translate each quote to natural English. Return ONLY a JSON array of strings, same order, no other text:\n${JSON.stringify(toTranslate.map(t => t.text))}`;
+        const transRaw = await callClaude(transPrompt, 600);
+        const transMatch = transRaw.match(/\[[\s\S]*\]/);
+        if (transMatch) {
+          const translations = JSON.parse(transMatch[0]);
+          toTranslate.forEach((item, i) => {
+            if (translations[i]) {
+              const prefix = results.themes[item.ti].verbatims[item.vi].match(/^\[\d+\]\s*/)?.[0] || '';
+              results.themes[item.ti].verbatims[item.vi] = `${prefix}${translations[i]} (translated)`;
+            }
+          });
+        }
+      } catch (e) { console.error('Translation failed:', e); }
     }
 
-    results.data_source = rawPosts.length > 0 ? 'collected' : 'fresh';
-    results.post_count = rawPosts.length;
+    results.post_count = selectedPosts.length;
+    results.source_count = sourceList.length;
 
-    await updateBrief(briefId, { status: 'complete', results, post_count: rawPosts.length });
-    console.log('Done! Posts:', rawPosts.length);
+    await updateBrief(briefId, { status: 'complete', results, post_count: selectedPosts.length });
+    console.log('Done! Posts:', selectedPosts.length, 'Sources:', sourceList.length);
     return NextResponse.json({ success: true });
 
   } catch (err) {
