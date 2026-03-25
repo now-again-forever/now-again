@@ -36,10 +36,10 @@ const DRIVER_COLORS: Record<string, string> = {
 };
 
 const STEPS = [
-  { label: 'Reading your brief', detail: 'Extracting keywords and challenge context' },
-  { label: 'Scanning Hacker News', detail: 'Pulling conversations from the last 12 months' },
-  { label: 'Scanning Bluesky', detail: 'Listening to real-time public discourse' },
-  { label: 'Scanning Reddit', detail: 'Surfacing community voices and debates' },
+  { label: 'Reading your brief', detail: 'Understanding the question and context' },
+  { label: 'Clustering conversations', detail: 'Grouping collected data by theme and signal' },
+  { label: 'Identifying cultural patterns', detail: 'Finding what connects across sources' },
+  { label: 'Scoring human drivers', detail: 'Mapping themes to motivations' },
   { label: 'Clustering conversations', detail: 'Finding patterns across all sources' },
   { label: 'Identifying cultural themes', detail: 'Running insight analysis with Claude' },
   { label: 'Writing implications', detail: `Framing strategic provocations for your brand` },
@@ -54,6 +54,7 @@ export default function ResultsPage() {
   const [activeTheme, setActiveTheme] = useState(0);
   const [pollCount, setPollCount] = useState(0);
   const [triggered, setTriggered] = useState(false);
+  const triggeredRef = useRef(false);
   const [elapsed, setElapsed] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -80,7 +81,8 @@ export default function ResultsPage() {
   }, [id]);
 
   const triggerGeneration = useCallback(async () => {
-    if (triggered) return;
+    if (triggeredRef.current) return;
+    triggeredRef.current = true;
     setTriggered(true);
     try {
       await fetch('/api/generate', {
@@ -168,7 +170,7 @@ export default function ResultsPage() {
           <h1 style={s.loadingTitle}>Listening to<br /><em style={{ fontStyle: 'italic', color: '#c8b89a' }}>culture...</em></h1>
 
           <p style={s.loadingSubtitle}>
-            Collecting real conversations for <strong>{brief.brand}</strong> across {(brief.markets || []).join(', ') || 'global'} markets.
+            Analysing <strong>{brief?.post_count || 0} collected conversations</strong> for <strong>{brief?.brand}</strong> across {(brief?.markets || []).join(', ') || 'global'} markets.
           </p>
 
           {failed ? (
