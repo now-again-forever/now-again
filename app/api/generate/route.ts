@@ -84,6 +84,10 @@ export async function POST(req: NextRequest) {
       ? `\nData from: ${[...new Set(rawPosts.map((p: any) => p.source))].slice(0, 6).join(', ')}.`
       : '';
 
+    // Group posts by source type for diversity tracking
+    const sourceTypes = rawPosts.map((p: any) => p.source || 'unknown');
+    const uniqueSources = [...new Set(sourceTypes)];
+
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
@@ -99,16 +103,25 @@ Category: ${brief.category}
 Markets: ${(brief.markets || []).join(', ') || 'Global'}
 Question: "${brief.question}"${sourceSummary}
 
+Sources available: ${uniqueSources.join(', ')}
+
 Here are ${numberedPosts.length} real collected posts tagged [source|country|date]:
-${numberedPosts.join('\n')}
+${numberedPosts.join('
+')}
 
 Identify 4 distinct cultural themes relevant to the question.
 
+IMPORTANT RULES:
+- For verbatims: select quotes from DIFFERENT sources — do not pick all quotes from the same source
+- Prefer quotes from web sources, blogs, and forums over Hacker News when possible
+- Each verbatim must start with the post number like "[3] actual text copied exactly"
+- Only use text that genuinely appears in the posts above
+
 For each theme provide:
 - name: evocative 2-4 words (e.g. "Quiet Local Pride")
-- summary: 2 sentences connecting to the question
+- summary: 2 rich sentences connecting to the question and the market context
 - drivers: exactly 2 from [Creativity, Experiences, Emotion, Engagement, Relationships, Responsibility, Wellbeing, Simplicity, Resilience, Control, Enhancement, Power, Achievement, Exploration, Individuality, Extremes]
-- verbatims: exactly 4 quotes, each starting with the post number like "[3] actual text"
+- verbatims: exactly 4 quotes from DIFFERENT sources, each starting with "[N] "
 - implications: exactly 3 strategic implications for ${brief.brand}
 
 Return ONLY this JSON with no markdown, no preamble:
