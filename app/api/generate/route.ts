@@ -231,6 +231,54 @@ Return ONLY this JSON with no markdown, no preamble. Use only straight single qu
     }
     // Source diversity enforced at input level — no post-processing needed
 
+    // Translate any non-English verbatims
+    const isLikelyNonEnglish = (text: string): boolean => {
+      // Simple heuristic: check for common non-English characters or words
+      const nonEnglishChars = /[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿÀ-ɏ]/;
+      const spanishWords = /\b(que|con|para|una|los|las|del|por|como|pero|más|este|esta|todo|también|cuando|sobre|entre|hasta|desde|hacia|durante|después|antes|donde|quien|cuanto|porque|aunque)\b/i;
+      const frenchWords = /\b(que|les|des|est|dans|avec|pour|sur|par|pas|plus|vous|nous|ils|elle|être|avoir|faire|dit|très|bien|comme|mais|donc|car|si|ou|et|je|il|la|le|un|une|du|au|aux)\b/i;
+      return nonEnglishChars.test(text) || spanishWords.test(text) || frenchWords.test(text);
+    };
+
+    // Collect all non-English verbatims for batch translation
+    const toTranslate: { themeIdx: number; verbIdx: number; text: string }[] = [];
+    (results.themes || []).forEach((theme: any, ti: number) => {
+      (theme.verbatims || []).forEach((v: string, vi: number) => {
+        const clean = v.replace(/^\[\d+\]\s*/, '');
+        if (isLikelyNonEnglish(clean)) {
+          toTranslate.push({ themeIdx: ti, verbIdx: vi, text: clean });
+        }
+      });
+    });
+
+    if (toTranslate.length > 0) {
+      console.log(`Translating ${toTranslate.length} non-English verbatims...`);
+      try {
+        const transRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5',
+            max_tokens: 500,
+            messages: [{
+              role: 'user',
+              content: `Translate each of these quotes to natural English. Return ONLY a JSON array of translated strings in the same order, no other text:
+${JSON.stringify(toTranslate.map(t => t.text))}`
+            }]
+          })
+        });
+        const transData = await transRes.json();
+        const transRaw = transData.content?.[0]?.text || '[]';
+        const translations = JSON.parse(transRaw.replace(/\`\`\`json|\`\`\`/g, '').trim());
+        toTranslate.forEach((item, i) => {
+          if (translations[i]) {
+            const prefix = results.themes[item.themeIdx].verbatims[item.verbIdx].match(/^\[\d+\]\s*/)?.[0] || '';
+            results.themes[item.themeIdx].verbatims[item.verbIdx] = `${prefix}${translations[i]} (translated)`;
+          }
+        });
+      } catch (e) { console.error('Translation error:', e); }
+    }
+
     results.data_source = rawPosts.length > 0 ? 'collected' : 'fresh';
     results.post_count = rawPosts.length;
 
