@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
     for (const p of scored) {
       const src = p.source || 'unknown';
       srcCap[src] = (srcCap[src] || 0) + 1;
-      if (srcCap[src] <= 2) selectedPosts.push(p);
+      if (srcCap[src] <= 1) selectedPosts.push(p);
       if (selectedPosts.length >= 40) break;
     }
 
@@ -138,7 +138,7 @@ Sources: ${sourceList.slice(0, 6).join(', ')}
 ${numberedPosts.length} real collected posts:
 ${numberedPosts.join('\n')}
 
-Identify 4 distinct cultural themes. For verbatims, prioritise first-person quotes ("I", "my", "me") above all else. Select from DIFFERENT source domains — max 1 quote per domain.
+Identify 4 distinct cultural themes. For verbatims, prioritise first-person quotes ("I", "my", "me") above all else. CRITICAL: Each of the 4 verbatims in a theme MUST come from a completely different source domain. If posts [1][amazon.es], [2][amazon.es] are both from amazon.es, you may only use ONE of them across ALL themes combined.
 
 For each theme:
 - name: evocative 2-4 words
