@@ -1,1093 +1,225 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NOW-AGAIN — New Brief</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap" rel="stylesheet">
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
-    --ink:    #0e0d0b;
-    --fog:    #f5f3ee;
-    --bone:   #ede9e0;
-    --warm:   #c8b89a;
-    --accent: #1a1a1a;
-    --green:  #2d4a3e;
-    --green-light: #e8f0ec;
-    --serif:  'Playfair Display', Georgia, serif;
-    --sans:   'DM Sans', sans-serif;
-    --mono:   'DM Mono', monospace;
-  }
-
-  html { font-size: 16px; }
-
-  body {
-    font-family: var(--sans);
-    background: var(--fog);
-    color: var(--ink);
-    min-height: 100vh;
-    padding: 0;
-  }
-
-  /* ── HEADER ── */
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 2rem 3rem;
-    border-bottom: 1px solid var(--bone);
-    position: sticky;
-    top: 0;
-    background: var(--fog);
-    z-index: 10;
-  }
-
-  .logo {
-    font-family: var(--serif);
-    font-size: 1.25rem;
-    font-weight: 400;
-    letter-spacing: .04em;
-  }
-
-  .logo span {
-    font-style: italic;
-    color: var(--warm);
-  }
-
-  .header-tag {
-    font-family: var(--mono);
-    font-size: .7rem;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    color: var(--warm);
-  }
-
-  /* ── LAYOUT ── */
-  .outer {
-    display: grid;
-    grid-template-columns: 1fr 360px;
-    min-height: calc(100vh - 73px);
-  }
-
-  /* ── FORM SIDE ── */
-  .form-side {
-    padding: 4rem 3rem 4rem 3rem;
-    max-width: 720px;
-  }
-
-  .brief-heading {
-    font-family: var(--serif);
-    font-size: 2.4rem;
-    font-weight: 400;
-    line-height: 1.2;
-    margin-bottom: .5rem;
-  }
-
-  .brief-heading em {
-    font-style: italic;
-    color: var(--warm);
-  }
-
-  .brief-sub {
-    font-size: .875rem;
-    color: #888;
-    font-weight: 300;
-    margin-bottom: 3.5rem;
-    letter-spacing: .01em;
-  }
-
-  /* Steps */
-  .step {
-    display: grid;
-    grid-template-columns: 48px 1fr;
-    gap: 0 1.5rem;
-    margin-bottom: 3rem;
-    opacity: 0;
-    transform: translateY(16px);
-    animation: fadeUp .5s ease forwards;
-  }
-
-  .step:nth-child(1) { animation-delay: .05s; }
-  .step:nth-child(2) { animation-delay: .1s; }
-  .step:nth-child(3) { animation-delay: .15s; }
-  .step:nth-child(4) { animation-delay: .2s; }
-  .step:nth-child(5) { animation-delay: .25s; }
-  .step:nth-child(6) { animation-delay: .3s; }
-  .step:nth-child(7) { animation-delay: .35s; }
-
-  @keyframes fadeUp {
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .step-num {
-    width: 36px;
-    height: 36px;
-    border: 1px solid var(--warm);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: var(--mono);
-    font-size: .75rem;
-    color: var(--warm);
-    flex-shrink: 0;
-    margin-top: 4px;
-    transition: all .2s;
-  }
-
-  .step.active .step-num,
-  .step:focus-within .step-num {
-    background: var(--green);
-    border-color: var(--green);
-    color: #fff;
-  }
-
-  .step-body { min-width: 0; }
-
-  .step-label {
-    font-family: var(--mono);
-    font-size: .7rem;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--warm);
-    margin-bottom: .5rem;
-  }
-
-  .step-title {
-    font-family: var(--serif);
-    font-size: 1.1rem;
-    font-weight: 400;
-    margin-bottom: .75rem;
-    line-height: 1.3;
-  }
-
-  /* Inputs */
-  input[type="text"],
-  input[type="email"],
-  textarea,
-  select {
-    width: 100%;
-    background: white;
-    border: 1px solid var(--bone);
-    border-radius: 6px;
-    padding: .75rem 1rem;
-    font-family: var(--sans);
-    font-size: .9rem;
-    color: var(--ink);
-    outline: none;
-    transition: border-color .2s, box-shadow .2s;
-    appearance: none;
-  }
-
-  input[type="text"]:focus,
-  input[type="email"]:focus,
-  textarea:focus,
-  select:focus {
-    border-color: var(--green);
-    box-shadow: 0 0 0 3px rgba(45,74,62,.08);
-  }
-
-  textarea {
-    resize: vertical;
-    min-height: 120px;
-    line-height: 1.6;
-  }
-
-  .input-hint {
-    font-size: .78rem;
-    color: #aaa;
-    margin-top: .4rem;
-    font-weight: 300;
-  }
-
-  /* Pill selectors */
-  .pill-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .5rem;
-  }
-
-  .pill {
-    padding: .45rem 1rem;
-    border: 1px solid var(--bone);
-    border-radius: 100px;
-    font-size: .8rem;
-    font-weight: 400;
-    cursor: pointer;
-    background: white;
-    color: #666;
-    transition: all .15s;
-    user-select: none;
-  }
-
-  .pill:hover { border-color: var(--warm); color: var(--ink); }
-
-  .pill.selected {
-    background: var(--green);
-    border-color: var(--green);
-    color: white;
-  }
-
-  /* Market grid */
-  .market-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: .4rem;
-  }
-
-  .market-pill {
-    padding: .5rem .75rem;
-    border: 1px solid var(--bone);
-    border-radius: 6px;
-    font-size: .78rem;
-    font-weight: 400;
-    cursor: pointer;
-    background: white;
-    color: #666;
-    text-align: center;
-    transition: all .15s;
-    user-select: none;
-  }
-
-  .market-pill:hover { border-color: var(--warm); color: var(--ink); }
-  .market-pill.selected {
-    background: var(--green-light);
-    border-color: var(--green);
-    color: var(--green);
-    font-weight: 500;
-  }
-
-  /* Time range */
-  .time-options {
-    display: flex;
-    gap: .5rem;
-  }
-
-  .time-option {
-    flex: 1;
-    padding: .75rem;
-    border: 1px solid var(--bone);
-    border-radius: 8px;
-    background: white;
-    cursor: pointer;
-    text-align: center;
-    transition: all .15s;
-  }
-
-  .time-option .t-main {
-    font-family: var(--serif);
-    font-size: 1.2rem;
-    font-weight: 600;
-    display: block;
-    color: var(--ink);
-  }
-
-  .time-option .t-sub {
-    font-size: .72rem;
-    color: #aaa;
-    font-weight: 300;
-  }
-
-  .time-option:hover { border-color: var(--warm); }
-
-  .time-option.selected {
-    background: var(--green-light);
-    border-color: var(--green);
-  }
-
-  .time-option.selected .t-main { color: var(--green); }
-  .time-option.selected .t-sub { color: var(--green); opacity: .7; }
-
-  /* Output cards */
-  .output-cards {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: .75rem;
-  }
-
-  .output-card {
-    border: 1px solid var(--bone);
-    border-radius: 10px;
-    padding: 1rem;
-    background: white;
-    cursor: pointer;
-    transition: all .15s;
-  }
-
-  .output-card:hover { border-color: var(--warm); }
-
-  .output-card.selected {
-    background: var(--green-light);
-    border-color: var(--green);
-  }
-
-  .output-card .oc-icon {
-    width: 32px;
-    height: 32px;
-    background: var(--bone);
-    border-radius: 6px;
-    margin-bottom: .6rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-  }
-
-  .output-card.selected .oc-icon {
-    background: rgba(45,74,62,.12);
-  }
-
-  .output-card .oc-name {
-    font-size: .82rem;
-    font-weight: 500;
-    margin-bottom: .25rem;
-    color: var(--ink);
-  }
-
-  .output-card .oc-desc {
-    font-size: .72rem;
-    color: #aaa;
-    line-height: 1.4;
-    font-weight: 300;
-  }
-
-  .output-card.selected .oc-name { color: var(--green); }
-
-  /* Submit */
-  .submit-row {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    margin-top: 3rem;
-    padding-top: 2rem;
-    border-top: 1px solid var(--bone);
-  }
-
-  .btn-submit {
-    background: var(--ink);
-    color: var(--fog);
-    border: none;
-    padding: 1rem 2.5rem;
-    font-family: var(--sans);
-    font-size: .9rem;
-    font-weight: 500;
-    letter-spacing: .03em;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all .2s;
-  }
-
-  .btn-submit:hover {
-    background: var(--green);
-    transform: translateY(-1px);
-  }
-
-  .btn-save {
-    background: none;
-    border: 1px solid var(--bone);
-    color: #999;
-    padding: 1rem 1.5rem;
-    font-family: var(--sans);
-    font-size: .85rem;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all .15s;
-  }
-
-  .btn-save:hover { border-color: var(--warm); color: var(--ink); }
-
-  .submit-note {
-    font-size: .78rem;
-    color: #bbb;
-    font-weight: 300;
-  }
-
-  /* ── SIDEBAR ── */
-  .sidebar {
-    background: var(--ink);
-    color: var(--fog);
-    padding: 3rem 2rem;
-    position: sticky;
-    top: 73px;
-    height: calc(100vh - 73px);
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-  }
-
-  .sidebar-heading {
-    font-family: var(--serif);
-    font-size: .9rem;
-    font-weight: 400;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--warm);
-    margin-bottom: .75rem;
-  }
-
-  /* Progress tracker */
-  .progress-list { list-style: none; }
-
-  .progress-list li {
-    display: flex;
-    align-items: center;
-    gap: .75rem;
-    padding: .6rem 0;
-    border-bottom: 1px solid rgba(255,255,255,.06);
-    font-size: .82rem;
-    color: rgba(255,255,255,.4);
-    transition: color .2s;
-  }
-
-  .progress-list li.done { color: rgba(255,255,255,.9); }
-  .progress-list li.active { color: var(--warm); }
-
-  .prog-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: rgba(255,255,255,.15);
-    flex-shrink: 0;
-    transition: background .2s;
-  }
-
-  .progress-list li.done .prog-dot { background: var(--green); }
-  .progress-list li.active .prog-dot { background: var(--warm); }
-
-  /* Preview */
-  .preview-block {
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 10px;
-    padding: 1.25rem;
-  }
-
-  .preview-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    padding: .4rem 0;
-    border-bottom: 1px solid rgba(255,255,255,.05);
-  }
-
-  .preview-row:last-child { border-bottom: none; }
-
-  .pr-label {
-    font-family: var(--mono);
-    font-size: .65rem;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,.3);
-  }
-
-  .pr-value {
-    font-size: .82rem;
-    color: rgba(255,255,255,.8);
-    text-align: right;
-    max-width: 60%;
-  }
-
-  .pr-value.empty { color: rgba(255,255,255,.2); font-style: italic; }
-
-  /* Examples */
-  .example-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
-
-  .ex-chip {
-    padding: .3rem .7rem;
-    background: rgba(255,255,255,.06);
-    border: 1px solid rgba(255,255,255,.1);
-    border-radius: 100px;
-    font-size: .72rem;
-    color: rgba(255,255,255,.5);
-    cursor: pointer;
-    transition: all .15s;
-  }
-
-  .ex-chip:hover {
-    background: rgba(255,255,255,.12);
-    color: rgba(255,255,255,.85);
-  }
-
-  /* ── SUCCESS OVERLAY ── */
-  .success-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: var(--fog);
-    z-index: 100;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    text-align: center;
-    gap: 1.5rem;
-  }
-
-  .success-overlay.show { display: flex; }
-
-  .success-icon {
-    width: 64px;
-    height: 64px;
-    background: var(--green-light);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-  }
-
-  .success-title {
-    font-family: var(--serif);
-    font-size: 2rem;
-    font-weight: 400;
-  }
-
-  .success-title em { font-style: italic; color: var(--warm); }
-
-  .success-sub {
-    font-size: .9rem;
-    color: #999;
-    max-width: 400px;
-    line-height: 1.6;
-    font-weight: 300;
-  }
-
-  .success-details {
-    background: white;
-    border: 1px solid var(--bone);
-    border-radius: 10px;
-    padding: 1.25rem 2rem;
-    font-size: .85rem;
-    color: #666;
-    max-width: 400px;
-    width: 100%;
-    text-align: left;
-  }
-
-  .success-details div {
-    display: flex;
-    justify-content: space-between;
-    padding: .35rem 0;
-    border-bottom: 1px solid var(--bone);
-  }
-
-  .success-details div:last-child { border-bottom: none; }
-  .success-details span:first-child { color: #bbb; font-size: .78rem; font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; }
-  .success-details span:last-child { font-weight: 500; color: var(--ink); text-align: right; }
-
-  .btn-new {
-    background: var(--ink);
-    color: var(--fog);
-    border: none;
-    padding: .9rem 2rem;
-    font-family: var(--sans);
-    font-size: .85rem;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background .2s;
-  }
-
-  .btn-new:hover { background: var(--green); }
-
-  @media (max-width: 900px) {
-    .outer { grid-template-columns: 1fr; }
-    .sidebar { display: none; }
-    header { padding: 1.25rem 1.5rem; }
-    .form-side { padding: 2rem 1.5rem; }
-    .output-cards { grid-template-columns: 1fr; }
-    .time-options { flex-direction: column; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOW—AGAIN · New Brief</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=DM+Sans:wght@300;400;500&family=DM+Mono&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#f5f3ee;--dark:#0e0d0b;--warm:#c8b89a;--green:#2d4a3e;--muted:#888;--border:#e0ddd5}
+    body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--dark);min-height:100vh}
+    header{padding:1.5rem 2.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:1rem}
+    .logo{font-family:'Playfair Display',Georgia,serif;font-size:1.1rem}
+    .logo em{color:var(--warm);font-style:normal}
+    .logo-sub{font-size:0.75rem;color:var(--muted);margin-left:auto}
+    .layout{display:grid;grid-template-columns:1fr 340px;min-height:calc(100vh - 65px)}
+    .form-side{padding:3rem;max-width:640px}
+    .form-intro{margin-bottom:2.5rem}
+    .form-intro h1{font-family:'Playfair Display',Georgia,serif;font-size:2rem;font-weight:400;line-height:1.2;margin-bottom:0.5rem}
+    .form-intro h1 em{color:var(--warm);font-style:italic}
+    .form-intro p{font-size:0.875rem;color:var(--muted);line-height:1.7}
+    .step{display:grid;grid-template-columns:36px 1fr;gap:0 1.25rem;margin-bottom:2rem;opacity:0;transform:translateY(8px);animation:fadeUp 0.4s ease forwards}
+    .step:nth-child(1){animation-delay:.05s}.step:nth-child(2){animation-delay:.1s}.step:nth-child(3){animation-delay:.15s}.step:nth-child(4){animation-delay:.2s}.step:nth-child(5){animation-delay:.25s}
+    @keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+    .step-num{font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--warm);padding-top:4px;letter-spacing:.05em}
+    .step-label{font-family:'DM Mono',monospace;font-size:0.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem}
+    .step-title{font-family:'Playfair Display',Georgia,serif;font-size:1.1rem;font-weight:400;margin-bottom:0.75rem;line-height:1.3}
+    input[type="text"],input[type="email"],textarea{width:100%;background:white;border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;font-size:0.9rem;font-family:'DM Sans',sans-serif;color:var(--dark);outline:none;transition:border-color 0.15s;resize:none}
+    input:focus,textarea:focus{border-color:var(--green)}
+    textarea{min-height:120px;line-height:1.6}
+    .input-hint{font-size:0.78rem;color:var(--muted);margin-top:0.4rem;line-height:1.5}
+    .market-grid{display:flex;flex-wrap:wrap;gap:0.5rem}
+    .market-pill{padding:0.5rem 1rem;border:1px solid var(--border);border-radius:100px;font-size:0.8rem;cursor:pointer;transition:all 0.15s;user-select:none;background:white}
+    .market-pill.selected{background:var(--green);border-color:var(--green);color:white}
+    .submit-row{display:flex;align-items:center;gap:1rem;padding-top:1.5rem;border-top:1px solid var(--border);margin-top:0.5rem}
+    .btn-submit{background:var(--dark);color:var(--bg);border:none;padding:0.9rem 2rem;border-radius:8px;font-size:0.875rem;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:8px}
+    .btn-submit:hover{background:#2a2926}.btn-submit:disabled{opacity:0.4;cursor:not-allowed}
+    .btn-spinner{width:14px;height:14px;border-radius:50%;border:2px solid rgba(245,243,238,0.3);border-top-color:var(--bg);animation:spin 0.8s linear infinite;display:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .submit-note{font-size:0.78rem;color:var(--muted);line-height:1.5}
+    .preview-side{background:var(--dark);color:#f5f3ee;padding:2.5rem 2rem;display:flex;flex-direction:column;gap:1.5rem}
+    .preview-label{font-family:'DM Mono',monospace;font-size:0.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--warm);margin-bottom:0.75rem}
+    .pf{margin-bottom:1.25rem}
+    .pf-label{font-family:'DM Mono',monospace;font-size:0.6rem;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:0.25rem}
+    .pf-value{font-size:0.875rem;color:rgba(255,255,255,0.75);line-height:1.5}
+    .pf-value.empty{color:rgba(255,255,255,0.2);font-style:italic}
+    .preview-q{font-family:'Playfair Display',Georgia,serif;font-size:0.95rem;font-style:italic;color:rgba(255,255,255,0.7);line-height:1.7;border-left:2px solid var(--warm);padding-left:1rem}
+    .preview-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(200,184,154,0.12);border:1px solid rgba(200,184,154,0.2);color:var(--warm);padding:6px 12px;border-radius:100px;font-size:0.78rem;margin-bottom:1.5rem}
+    .example-link{font-size:0.75rem;color:rgba(255,255,255,0.25);cursor:pointer;text-decoration:underline;text-underline-offset:3px;margin-top:auto}
+    .example-link:hover{color:rgba(255,255,255,0.5)}
+    @media(max-width:768px){.layout{grid-template-columns:1fr}.preview-side{display:none}.form-side{padding:2rem 1.5rem}}
+  </style>
 </head>
 <body>
-
 <header>
-  <div class="logo">now<span>—</span>again</div>
-  <span class="header-tag">Cultural Intelligence Platform</span>
+  <div class="logo">now<em>—</em>again</div>
+  <div class="logo-sub">Cultural intelligence platform</div>
 </header>
+<div class="layout">
+  <div class="form-side">
+    <div class="form-intro">
+      <h1>Start a new <em>Pulse</em> report</h1>
+      <p>Define your research question. We'll collect thousands of real conversations and surface the cultural themes that matter for your brand.</p>
+    </div>
 
-<div class="outer">
-
-  <!-- FORM -->
-  <main class="form-side">
-    <h1 class="brief-heading">Start a new <em>brief</em></h1>
-    <p class="brief-sub">Define your intractable question. We'll do the rest.</p>
-
-    <div class="step" id="step-1">
+    <div class="step">
       <div class="step-num">01</div>
       <div class="step-body">
         <div class="step-label">Client</div>
         <div class="step-title">Who is this for?</div>
         <input type="text" id="brand" placeholder="e.g. Lays, Bacardi, Unilever UK" oninput="updatePreview()">
-        <p class="input-hint">Brand name or client — appears on the final deliverable</p>
+        <p class="input-hint">Brand name or client — appears on the final report</p>
       </div>
     </div>
 
-    <div class="step" id="step-2">
+    <div class="step">
       <div class="step-num">02</div>
       <div class="step-body">
         <div class="step-label">Category</div>
         <div class="step-title">What category or topic?</div>
         <input type="text" id="category" placeholder="e.g. flavour trends in snacking, sustainability in FMCG" oninput="updatePreview()">
-        <p class="input-hint">The cultural space NOW-AGAIN will listen to</p>
+        <p class="input-hint">The broader cultural space we're listening to</p>
       </div>
     </div>
 
-    <div class="step" id="step-3">
+    <div class="step">
       <div class="step-num">03</div>
       <div class="step-body">
         <div class="step-label">Markets</div>
         <div class="step-title">Which markets?</div>
-        <div class="market-grid" id="markets">
-          <div class="market-pill" onclick="toggleMarket(this)">🇬🇧 UK</div>
-          <div class="market-pill" onclick="toggleMarket(this)">🇫🇷 FR</div>
-          <div class="market-pill" onclick="toggleMarket(this)">🇪🇸 ES</div>
-          <div class="market-pill" onclick="toggleMarket(this)">🇩🇪 DE</div>
-          <div class="market-pill" onclick="toggleMarket(this)">🇵🇱 PL</div>
-          <div class="market-pill" onclick="toggleMarket(this)">🇹🇷 TR</div>
-          <div class="market-pill" onclick="toggleMarket(this)">🇺🇸 US</div>
-          <div class="market-pill" onclick="toggleMarket(this)">🌍 Global</div>
+        <div class="market-grid">
+          <div class="market-pill" onclick="toggleMarket(this,'UK')">🇬🇧 UK</div>
+          <div class="market-pill" onclick="toggleMarket(this,'FR')">🇫🇷 France</div>
+          <div class="market-pill" onclick="toggleMarket(this,'ES')">🇪🇸 Spain</div>
+          <div class="market-pill" onclick="toggleMarket(this,'DE')">🇩🇪 Germany</div>
+          <div class="market-pill" onclick="toggleMarket(this,'PL')">🇵🇱 Poland</div>
+          <div class="market-pill" onclick="toggleMarket(this,'TR')">🇹🇷 Turkey</div>
+          <div class="market-pill" onclick="toggleMarket(this,'US')">🇺🇸 USA</div>
+          <div class="market-pill" onclick="toggleMarket(this,'Global')">🌍 Global</div>
         </div>
-        <p class="input-hint">Select one or more</p>
       </div>
     </div>
 
-    <div class="step" id="step-4">
+    <div class="step">
       <div class="step-num">04</div>
-      <div class="step-body">
-        <div class="step-label">Time window</div>
-        <div class="step-title">How far back should we look?</div>
-        <div class="time-options" id="timeOptions">
-          <div class="time-option" onclick="selectTime(this, '3 months')">
-            <span class="t-main">3</span>
-            <span class="t-sub">months</span>
-          </div>
-          <div class="time-option" onclick="selectTime(this, '6 months')">
-            <span class="t-main">6</span>
-            <span class="t-sub">months</span>
-          </div>
-          <div class="time-option selected" onclick="selectTime(this, '12 months')">
-            <span class="t-main">12</span>
-            <span class="t-sub">months</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="step" id="step-5">
-      <div class="step-num">05</div>
-      <div class="step-body">
-        <div class="step-label">Challenge type</div>
-        <div class="step-title">What kind of problem?</div>
-        <div class="pill-group" id="challengeType">
-          <div class="pill" onclick="togglePill(this, 'challenge')">Product innovation</div>
-          <div class="pill" onclick="togglePill(this, 'challenge')">Marketing &amp; comms</div>
-          <div class="pill" onclick="togglePill(this, 'challenge')">Brand positioning</div>
-          <div class="pill" onclick="togglePill(this, 'challenge')">Cultural trends</div>
-          <div class="pill" onclick="togglePill(this, 'challenge')">Competitive landscape</div>
-          <div class="pill" onclick="togglePill(this, 'challenge')">Portfolio strategy</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="step" id="step-6">
-      <div class="step-num">06</div>
       <div class="step-body">
         <div class="step-label">The question</div>
         <div class="step-title">What is the intractable question at the heart of this?</div>
         <textarea id="question" placeholder="e.g. What can online conversations teach us about how Spanish consumers experience the tension between local identity and global food culture — and where does Lays sit in that?" oninput="updatePreview()"></textarea>
-        <p class="input-hint">The more specific, the richer the insight. This seeds everything.</p>
+        <p class="input-hint">The more specific and culturally curious the question, the richer the insights</p>
       </div>
     </div>
 
-    <div class="step" id="step-7">
-      <div class="step-num">07</div>
+    <div class="step">
+      <div class="step-num">05</div>
       <div class="step-body">
-        <div class="step-label">Output format</div>
-        <div class="step-title">What do you need back?</div>
-        <div class="output-cards" id="outputFormat">
-          <div class="output-card" onclick="selectOutput(this, 'Pulse report')">
-            <div class="oc-icon">&#9632;</div>
-            <div class="oc-name">Pulse report</div>
-            <div class="oc-desc">Cultural themes + driver index + brand provocations</div>
-          </div>
-          <div class="output-card" onclick="selectOutput(this, 'Springboard report')">
-            <div class="oc-icon">&#9632;</div>
-            <div class="oc-name">Springboard report</div>
-            <div class="oc-desc">Territories + named springboards + verbatim bubbles</div>
-          </div>
-          <div class="output-card" onclick="selectOutput(this, 'Live workspace')">
-            <div class="oc-icon">&#9632;</div>
-            <div class="oc-name">Live workspace</div>
-            <div class="oc-desc">Interactive clustering tool — researcher-guided</div>
-          </div>
-        </div>
+        <div class="step-label">Notification</div>
+        <div class="step-title">Where should we send the report?</div>
+        <input type="email" id="email" placeholder="your@email.com" oninput="updatePreview()">
+        <p class="input-hint">We'll email you when data collection is complete</p>
       </div>
     </div>
 
     <div class="submit-row">
-      <button class="btn-submit" onclick="submitBrief()">Generate insights &rarr;</button>
-      <button class="btn-save" onclick="saveDraft()">Save as draft</button>
-      <span class="submit-note">Takes ~2 mins to process</span>
+      <button class="btn-submit" id="submitBtn" onclick="submitBrief()">
+        <span class="btn-spinner" id="spinner"></span>
+        Start research →
+      </button>
+      <p class="submit-note">Typically ready in 15–60 minutes.</p>
     </div>
-  </main>
+  </div>
 
-  <!-- SIDEBAR -->
-  <aside class="sidebar">
-
-    <div>
-      <div class="sidebar-heading">Brief progress</div>
-      <ul class="progress-list" id="progressList">
-        <li class="active"><div class="prog-dot"></div>Client</li>
-        <li><div class="prog-dot"></div>Category</li>
-        <li><div class="prog-dot"></div>Markets</li>
-        <li><div class="prog-dot"></div>Time window</li>
-        <li><div class="prog-dot"></div>Challenge type</li>
-        <li><div class="prog-dot"></div>The question</li>
-        <li><div class="prog-dot"></div>Output format</li>
-      </ul>
+  <div class="preview-side">
+    <div class="preview-badge"><span>✦</span> Pulse report</div>
+    <div class="preview-label">Brief preview</div>
+    <div class="pf"><div class="pf-label">Client</div><div class="pf-value empty" id="prev-brand">—</div></div>
+    <div class="pf"><div class="pf-label">Category</div><div class="pf-value empty" id="prev-category">—</div></div>
+    <div class="pf"><div class="pf-label">Markets</div><div class="pf-value empty" id="prev-markets">—</div></div>
+    <div class="pf"><div class="pf-label">Research question</div><div class="preview-q empty" id="prev-question">Your question will appear here...</div></div>
+    <div style="margin-top:auto">
+      <div style="font-size:0.75rem;color:rgba(255,255,255,0.2);line-height:1.7;margin-bottom:1.5rem">NOW—AGAIN collects real online conversations across your markets, clusters them into cultural themes, and surfaces what matters for your brand.</div>
+      <div class="example-link" onclick="fillExample()">Load example brief →</div>
     </div>
-
-    <div>
-      <div class="sidebar-heading">Preview</div>
-      <div class="preview-block">
-        <div class="preview-row">
-          <span class="pr-label">Brand</span>
-          <span class="pr-value empty" id="prev-brand">—</span>
-        </div>
-        <div class="preview-row">
-          <span class="pr-label">Category</span>
-          <span class="pr-value empty" id="prev-category">—</span>
-        </div>
-        <div class="preview-row">
-          <span class="pr-label">Markets</span>
-          <span class="pr-value empty" id="prev-markets">—</span>
-        </div>
-        <div class="preview-row">
-          <span class="pr-label">Window</span>
-          <span class="pr-value" id="prev-time">12 months</span>
-        </div>
-        <div class="preview-row">
-          <span class="pr-label">Output</span>
-          <span class="pr-value empty" id="prev-output">—</span>
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <div class="sidebar-heading">Try an example</div>
-      <div class="example-chips">
-        <div class="ex-chip" onclick="loadExample('lays')">Lays flavours ES</div>
-        <div class="ex-chip" onclick="loadExample('pepsi')">PepsiCo local UK</div>
-        <div class="ex-chip" onclick="loadExample('bacardi')">Bacardi Gen Z</div>
-        <div class="ex-chip" onclick="loadExample('danone')">Danone wellness</div>
-      </div>
-    </div>
-
-  </aside>
-</div>
-
-<!-- SUCCESS OVERLAY -->
-<div class="success-overlay" id="successOverlay">
-  <div class="success-icon">&#10003;</div>
-  <h2 class="success-title">Brief <em>submitted</em></h2>
-  <p class="success-sub">NOW-AGAIN is collecting and analysing conversations. Your report will be ready in approximately 2 minutes.</p>
-  <div class="success-details" id="successDetails"></div>
-  <button class="btn-new" onclick="resetForm()">Start another brief</button>
+  </div>
 </div>
 
 <script>
-  let selectedTime = '12 months';
-  let selectedOutput = '';
+  const SUPABASE_URL = 'https://emibznnqnuxztkdaanhb.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_k0bYncD0UNP2a_XCqiVksA_cbPBFlVC';
   let selectedMarkets = [];
-  let selectedChallenge = [];
 
-  function toggleMarket(el) {
-    el.classList.toggle('selected');
-    const text = el.textContent.trim().split(' ').slice(1).join(' ');
+  function toggleMarket(el, market) {
     if (el.classList.contains('selected')) {
-      selectedMarkets.push(text);
+      el.classList.remove('selected');
+      selectedMarkets = selectedMarkets.filter(m => m !== market);
     } else {
-      selectedMarkets = selectedMarkets.filter(m => m !== text);
+      el.classList.add('selected');
+      selectedMarkets.push(market);
     }
     updatePreview();
-    updateProgress();
-  }
-
-  function togglePill(el, group) {
-    el.classList.toggle('selected');
-    const text = el.textContent;
-    if (el.classList.contains('selected')) {
-      selectedChallenge.push(text);
-    } else {
-      selectedChallenge = selectedChallenge.filter(c => c !== text);
-    }
-    updateProgress();
-  }
-
-  function selectTime(el, val) {
-    document.querySelectorAll('.time-option').forEach(e => e.classList.remove('selected'));
-    el.classList.add('selected');
-    selectedTime = val;
-    document.getElementById('prev-time').textContent = val;
-    document.getElementById('prev-time').classList.remove('empty');
-    updateProgress();
-  }
-
-  function selectOutput(el, val) {
-    document.querySelectorAll('.output-card').forEach(e => e.classList.remove('selected'));
-    el.classList.add('selected');
-    selectedOutput = val;
-    const prev = document.getElementById('prev-output');
-    prev.textContent = val;
-    prev.classList.remove('empty');
-    updateProgress();
   }
 
   function updatePreview() {
     const brand = document.getElementById('brand').value;
     const category = document.getElementById('category').value;
-
-    const pb = document.getElementById('prev-brand');
-    pb.textContent = brand || '—';
-    pb.classList.toggle('empty', !brand);
-
-    const pc = document.getElementById('prev-category');
-    pc.textContent = category ? (category.length > 28 ? category.slice(0,28)+'…' : category) : '—';
-    pc.classList.toggle('empty', !category);
-
-    updateProgress();
-  }
-
-  function updatePreviewMarkets() {
-    const pm = document.getElementById('prev-markets');
-    if (selectedMarkets.length > 0) {
-      pm.textContent = selectedMarkets.join(', ');
-      pm.classList.remove('empty');
-    } else {
-      pm.textContent = '—';
-      pm.classList.add('empty');
-    }
-  }
-
-  function updateProgress() {
-    const brand = document.getElementById('brand').value;
-    const category = document.getElementById('category').value;
     const question = document.getElementById('question').value;
-
-    const states = [
-      !!brand,
-      !!category,
-      selectedMarkets.length > 0,
-      true,
-      selectedChallenge.length > 0,
-      question.length > 20,
-      !!selectedOutput
-    ];
-
-    const items = document.querySelectorAll('.progress-list li');
-    let firstActive = -1;
-    states.forEach((done, i) => {
-      items[i].classList.remove('done', 'active');
-      if (done) items[i].classList.add('done');
-      else if (firstActive === -1) firstActive = i;
-    });
-    if (firstActive > -1) items[firstActive].classList.add('active');
-
-    updatePreviewMarkets();
-  }
-
-  function loadExample(key) {
-    const examples = {
-      lays: {
-        brand: 'Lays (PepsiCo)',
-        category: 'flavour trends in snacking',
-        markets: ['ES'],
-        challenge: 'Product innovation',
-        question: 'What can online conversations teach us about how Spanish consumers experience local vs global food identity — and where does Lays sit in that flavour landscape?',
-        output: 'Springboard report'
-      },
-      pepsi: {
-        brand: 'PepsiCo UK',
-        category: 'local products and provenance',
-        markets: ['UK', 'FR'],
-        challenge: 'Brand positioning',
-        question: 'How are UK and French consumers redefining "local" and what does that mean for multinational food and drink brands navigating authenticity?',
-        output: 'Pulse report'
-      },
-      bacardi: {
-        brand: 'Bacardi',
-        category: 'alcohol and nightlife culture',
-        markets: ['UK', 'US'],
-        challenge: 'Marketing & comms',
-        question: 'How is Gen Z reshaping their relationship with alcohol — what tensions, rituals, and cultural moments define their drinking behaviour in 2024?',
-        output: 'Pulse report'
-      },
-      danone: {
-        brand: 'Danone',
-        category: 'gut health and wellness',
-        markets: ['UK', 'DE', 'FR'],
-        challenge: 'Cultural trends',
-        question: 'What is driving the explosion of interest in gut health and microbiome culture — and what language, rituals and beliefs surround it online?',
-        output: 'Springboard report'
-      }
+    const set = (id, val, fallback) => {
+      const el = document.getElementById(id);
+      el.textContent = val || fallback;
+      el.className = el.className.replace(' empty','') + (val ? '' : ' empty');
     };
-
-    const e = examples[key];
-    document.getElementById('brand').value = e.brand;
-    document.getElementById('category').value = e.category;
-    document.getElementById('question').value = e.question;
-
-    document.querySelectorAll('.market-pill').forEach(el => {
-      const mkt = el.textContent.trim().split(' ').slice(1).join(' ');
-      if (e.markets.includes(mkt)) {
-        el.classList.add('selected');
-        if (!selectedMarkets.includes(mkt)) selectedMarkets.push(mkt);
-      } else {
-        el.classList.remove('selected');
-        selectedMarkets = selectedMarkets.filter(m => m !== mkt);
-      }
-    });
-
-    document.querySelectorAll('.pill').forEach(el => {
-      if (el.textContent === e.challenge) {
-        el.classList.add('selected');
-        if (!selectedChallenge.includes(e.challenge)) selectedChallenge.push(e.challenge);
-      }
-    });
-
-    document.querySelectorAll('.output-card').forEach(el => {
-      const name = el.querySelector('.oc-name').textContent;
-      el.classList.toggle('selected', name === e.output);
-      if (name === e.output) selectedOutput = e.output;
-    });
-
-    updatePreview();
-    updateProgress();
+    set('prev-brand', brand, '—');
+    set('prev-category', category, '—');
+    set('prev-markets', selectedMarkets.join(', '), '—');
+    set('prev-question', question, 'Your question will appear here...');
   }
 
-  const SUPABASE_URL = 'https://emibznnqnuxztkdaanhb.supabase.co';
-  const SUPABASE_KEY = 'sb_publishable_k0bYncD0UNP2a_XCqiVksA_cbPBFlVC';
-
-  async function saveBriefToSupabase(brief) {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/briefs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(brief)
+  function fillExample() {
+    document.getElementById('brand').value = 'Lays (PepsiCo)';
+    document.getElementById('category').value = 'flavour trends in snacking';
+    document.getElementById('question').value = 'What can online conversations teach us about how Spanish consumers experience local vs global food identity — and where does Lays sit in that flavour landscape?';
+    document.querySelectorAll('.market-pill').forEach(p => p.classList.remove('selected'));
+    selectedMarkets = [];
+    document.querySelectorAll('.market-pill').forEach(p => {
+      if (p.textContent.includes('Spain') || p.textContent.includes('UK')) {
+        p.classList.add('selected');
+        selectedMarkets.push(p.textContent.includes('Spain') ? 'ES' : 'UK');
+      }
     });
-    if (!response.ok) throw new Error('Failed to save brief');
-    return await response.json();
+    updatePreview();
   }
 
   async function submitBrief() {
-    const brand = document.getElementById('brand').value;
-    const question = document.getElementById('question').value;
-
-    if (!brand || !question) {
-      alert('Please fill in at least the client name and your question to continue.');
+    const brand = document.getElementById('brand').value.trim();
+    const category = document.getElementById('category').value.trim();
+    const question = document.getElementById('question').value.trim();
+    const email = document.getElementById('email').value.trim();
+    if (!brand || !category || selectedMarkets.length === 0 || question.length < 20) {
+      alert('Please fill in client, category, at least one market, and the research question.');
       return;
     }
-
-    const btn = document.querySelector('.btn-submit');
-    btn.textContent = 'Saving...';
+    const btn = document.getElementById('submitBtn');
+    const spinner = document.getElementById('spinner');
     btn.disabled = true;
-
+    spinner.style.display = 'block';
     try {
-      const saved = await saveBriefToSupabase({
-        brand,
-        category: document.getElementById('category').value,
-        markets: selectedMarkets,
-        time_window: selectedTime,
-        challenge_type: selectedChallenge,
-        question,
-        output_format: selectedOutput || 'Pulse report',
-        status: 'pending'
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/briefs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ brand, category, markets: selectedMarkets, question, client_email: email || null, output_format: 'Pulse report', status: 'pending' })
       });
-      const briefId = saved[0]?.id;
-      if (briefId) {
-        window.location.href = '/setup/' + briefId;
-        return;
-      }
-    } catch(err) {
-      alert('Something went wrong saving your brief. Please try again.');
+      const data = await res.json();
+      const briefId = data[0]?.id;
+      if (briefId) { window.location.href = '/setup/' + briefId; }
+      else throw new Error('No ID returned');
+    } catch (err) {
       console.error(err);
-    } finally {
-      btn.textContent = 'Generate insights →';
+      alert('Something went wrong — please try again.');
       btn.disabled = false;
+      spinner.style.display = 'none';
     }
   }
-
-  function saveDraft() {
-    const draft = {
-      brand: document.getElementById('brand').value,
-      category: document.getElementById('category').value,
-      markets: selectedMarkets,
-      time: selectedTime,
-      challenge: selectedChallenge,
-      question: document.getElementById('question').value,
-      output: selectedOutput
-    };
-    localStorage.setItem('nowagain_draft', JSON.stringify(draft));
-    const btn = document.querySelector('.btn-save');
-    btn.textContent = 'Draft saved ✓';
-    btn.style.color = '#2d4a3e';
-    setTimeout(() => {
-      btn.textContent = 'Save as draft';
-      btn.style.color = '';
-    }, 2000);
-  }
-
-  function resetForm() {
-    document.getElementById('successOverlay').classList.remove('show');
-    document.getElementById('brand').value = '';
-    document.getElementById('category').value = '';
-    document.getElementById('question').value = '';
-    selectedMarkets = [];
-    selectedChallenge = [];
-    selectedOutput = '';
-    document.querySelectorAll('.market-pill, .pill, .output-card').forEach(el => el.classList.remove('selected'));
-    document.querySelectorAll('.time-option').forEach(el => el.classList.remove('selected'));
-    document.querySelectorAll('.time-option')[2].classList.add('selected');
-    selectedTime = '12 months';
-    updatePreview();
-    updateProgress();
-  }
-
-  const savedDraft = localStorage.getItem('nowagain_draft');
-  if (savedDraft) {
-    try {
-      const d = JSON.parse(savedDraft);
-      if (d.brand) document.getElementById('brand').value = d.brand;
-      if (d.category) document.getElementById('category').value = d.category;
-      if (d.question) document.getElementById('question').value = d.question;
-      if (d.markets) {
-        selectedMarkets = d.markets;
-        document.querySelectorAll('.market-pill').forEach(el => {
-          const mkt = el.textContent.trim().split(' ').slice(1).join(' ');
-          if (d.markets.includes(mkt)) el.classList.add('selected');
-        });
-      }
-      if (d.time) {
-        selectedTime = d.time;
-        document.querySelectorAll('.time-option').forEach(el => {
-          const val = el.querySelector('.t-main').textContent + ' ' + el.querySelector('.t-sub').textContent;
-          el.classList.toggle('selected', val.includes(d.time.split(' ')[0]));
-        });
-      }
-      updatePreview();
-      updateProgress();
-    } catch(e) {}
-  }
-
-  updateProgress();
 </script>
 </body>
 </html>
