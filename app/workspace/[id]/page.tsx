@@ -545,7 +545,8 @@ export default function WorkspacePage() {
                             </div>
                           </div>
 
-                        {/* TREND SIGNALS */}
+                        {/* TREND SIGNALS — full width, spans all 3 columns */}
+                        <div style={{ gridColumn: '1 / -1' }}>
                         {Object.keys(trends).length > 0 && (() => {
                           const sorted = Object.entries(trends)
                             .filter(([, t]) => (t as any).velocity !== 0)
@@ -585,6 +586,7 @@ export default function WorkspacePage() {
                           );
                         })()}
 
+                        </div>
                         </div>
 
                       )}
