@@ -151,8 +151,7 @@ export default function WorkspacePage() {
       setPosts(b.collected_posts_full || []);
       if (b.clusters) {
         setClusters(b.clusters);
-        // Fetch trends in background
-        setTimeout(() => fetchTrends(b.clusters), 500);
+        setTimeout(fetchTrends, 600);
       }
       if (b.workspace_state) setWs(b.workspace_state);
       setLoading(false);
@@ -183,6 +182,7 @@ export default function WorkspacePage() {
       if (bData[0]?.collected_posts_full) setPosts(bData[0].collected_posts_full);
     }
     setClustering(false);
+    fetchTrends();
   };
 
   const fetchTrends = async (_clustersToFetch?: any[]) => {
@@ -197,6 +197,21 @@ export default function WorkspacePage() {
       const data = await res.json();
       if (data.success) setTrends(data.trends);
     } catch (e) { console.error('Trends fetch failed:', e); }
+    setTrendsLoading(false);
+  };
+
+  const fetchTrends = async () => {
+    if (!id) return;
+    setTrendsLoading(true);
+    try {
+      const res = await fetch('/api/trends', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ briefId: id })
+      });
+      const data = await res.json();
+      if (data.success) setTrends(data.trends);
+    } catch (e) { console.error('Trends failed:', e); }
     setTrendsLoading(false);
   };
 
@@ -594,19 +609,32 @@ export default function WorkspacePage() {
                             </div>
                           );
                         })()}
-                        {/* Velocity badge */}
+
+
+                        {/* Trend sparkline */}
                         {(() => {
                           const t = trends[cluster.name];
-                          if (!t) return null;
-                          const isRising = t.velocity > 10;
-                          const isFalling = t.velocity < -10;
-                          const color = isRising ? '#5DCAA5' : isFalling ? '#F0997B' : 'rgba(255,255,255,0.25)';
-                          const label = isRising ? `↑ rising` : isFalling ? `↓ fading` : `→ stable`;
+                          if (!t?.values?.length) return trendsLoading ? (
+                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', fontFamily: 'monospace', marginBottom: 8 }}>loading trends...</div>
+                          ) : null;
+                          const vals = t.values;
+                          const max = Math.max(...vals, 1);
+                          const isRising = t.velocity > 8;
+                          const isFalling = t.velocity < -8;
+                          const lineColor = isRising ? '#5DCAA5' : isFalling ? '#F0997B' : 'rgba(255,255,255,0.3)';
+                          const velLabel = isRising ? `+${t.velocity}%` : isFalling ? `${t.velocity}%` : 'stable';
+                          const W = 8;
+                          const H = 24;
+                          const pts = vals.map((v, i) => `${i * W + W / 2},${H - Math.round((v / max) * (H - 2)) - 1}`).join(' ');
                           return (
-                            <div style={{ marginBottom: 8 }}>
-                              <span style={{ fontSize: 9, color, fontFamily: 'monospace', padding: '2px 7px', borderRadius: 20, background: isRising ? 'rgba(93,202,165,0.1)' : isFalling ? 'rgba(240,153,123,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${isRising ? 'rgba(93,202,165,0.2)' : isFalling ? 'rgba(240,153,123,0.2)' : 'rgba(255,255,255,0.06)'}` }}>
-                                {label}
-                              </span>
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>search interest · 12 months</span>
+                                <span style={{ fontSize: 9, fontFamily: 'monospace', color: lineColor }}>{velLabel} {isRising ? '↑' : isFalling ? '↓' : '→'}</span>
+                              </div>
+                              <svg width="100%" height={H} viewBox={`0 0 ${vals.length * W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+                                <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
+                              </svg>
                             </div>
                           );
                         })()}
