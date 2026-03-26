@@ -613,27 +613,30 @@ export default function WorkspacePage() {
                         {/* Trend sparkline */}
                         {(() => {
                           const t = trends[cluster.name];
-                          if (!t?.values?.length) return trendsLoading ? (
-                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', fontFamily: 'monospace', marginBottom: 8 }}>loading trends...</div>
-                          ) : null;
-                          const vals = t.values;
-                          const max = Math.max(...vals, 1);
+                          if (!t) return null;
+                          const vals = (t.values || []).filter((v: number) => v > 0);
                           const isRising = t.velocity > 8;
                           const isFalling = t.velocity < -8;
-                          const lineColor = isRising ? '#5DCAA5' : isFalling ? '#F0997B' : 'rgba(255,255,255,0.3)';
+                          const lineColor = isRising ? '#5DCAA5' : isFalling ? '#F0997B' : 'rgba(255,255,255,0.35)';
                           const velLabel = isRising ? `+${t.velocity}%` : isFalling ? `${t.velocity}%` : 'stable';
-                          const W = 8;
-                          const H = 24;
-                          const pts = vals.map((v, i) => `${i * W + W / 2},${H - Math.round((v / max) * (H - 2)) - 1}`).join(' ');
+                          const arrow = isRising ? '↑' : isFalling ? '↓' : '→';
                           return (
                             <div style={{ marginBottom: 10 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>search interest · 12 months</span>
-                                <span style={{ fontSize: 9, fontFamily: 'monospace', color: lineColor }}>{velLabel} {isRising ? '↑' : isFalling ? '↓' : '→'}</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: vals.length > 2 ? 3 : 0 }}>
+                                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>google trends</span>
+                                <span style={{ fontSize: 9, fontFamily: 'monospace', color: lineColor, fontWeight: 500 }}>{velLabel} {arrow}</span>
                               </div>
-                              <svg width="100%" height={H} viewBox={`0 0 ${vals.length * W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-                                <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
-                              </svg>
+                              {vals.length > 2 && (() => {
+                                const max = Math.max(...vals, 1);
+                                const W = 8;
+                                const H = 22;
+                                const pts = vals.map((v: number, i: number) => `${i * W + W / 2},${H - Math.round((v / max) * (H - 2)) - 1}`).join(' ');
+                                return (
+                                  <svg width="100%" height={H} viewBox={`0 0 ${vals.length * W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+                                    <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
+                                  </svg>
+                                );
+                              })()}
                             </div>
                           );
                         })()}
