@@ -374,12 +374,7 @@ export default function WorkspacePage() {
 
             {clusters.length > 0 && !clustering && (
               <>
-                {/* TRENDS DEBUG */}
-                {Object.keys(trends).length > 0 && (
-                  <div style={{ fontSize: 9, color: '#5DCAA5', fontFamily: 'monospace', marginBottom: 8, padding: '4px 8px', background: 'rgba(93,202,165,0.1)', borderRadius: 4 }}>
-                    ✓ Trends loaded for {Object.keys(trends).length} clusters
-                  </div>
-                )}
+
                 {/* DATA OVERVIEW PANEL */}
                 {(() => {
                   const sourceBreakdown = posts.reduce((acc: Record<string,number>, p: any) => {
@@ -550,7 +545,48 @@ export default function WorkspacePage() {
                             </div>
                           </div>
 
+                        {/* TREND SIGNALS */}
+                        {Object.keys(trends).length > 0 && (() => {
+                          const sorted = Object.entries(trends)
+                            .filter(([, t]) => (t as any).velocity !== 0)
+                            .sort((a, b) => Math.abs((b[1] as any).velocity) - Math.abs((a[1] as any).velocity))
+                            .slice(0, 8);
+                          const rising = sorted.filter(([, t]) => (t as any).velocity > 8);
+                          const falling = sorted.filter(([, t]) => (t as any).velocity < -8);
+                          if (sorted.length === 0) return null;
+                          return (
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 500, color: '#c8b89a', marginBottom: 8 }}>📈 Google Trends signals</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                {rising.length > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: 9, color: '#5DCAA5', fontFamily: 'monospace', marginBottom: 6 }}>↑ RISING</div>
+                                    {rising.map(([name, t]) => (
+                                      <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                                        <div style={{ flex: 1, fontSize: 9, color: 'rgba(255,255,255,0.6)', lineHeight: 1.3 }}>{name}</div>
+                                        <span style={{ fontSize: 9, color: '#5DCAA5', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>+{(t as any).velocity}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {falling.length > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: 9, color: '#F0997B', fontFamily: 'monospace', marginBottom: 6 }}>↓ FADING</div>
+                                    {falling.map(([name, t]) => (
+                                      <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                                        <div style={{ flex: 1, fontSize: 9, color: 'rgba(255,255,255,0.6)', lineHeight: 1.3 }}>{name}</div>
+                                        <span style={{ fontSize: 9, color: '#F0997B', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{(t as any).velocity}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         </div>
+
                       )}
                     </div>
                   );
@@ -610,36 +646,7 @@ export default function WorkspacePage() {
                         })()}
 
 
-                        {/* Trend sparkline */}
-                        {(() => {
-                          const t = trends[cluster.name];
-                          if (!t) return null;
-                          const vals = (t.values || []).filter((v: number) => v > 0);
-                          const isRising = t.velocity > 8;
-                          const isFalling = t.velocity < -8;
-                          const lineColor = isRising ? '#5DCAA5' : isFalling ? '#F0997B' : 'rgba(255,255,255,0.35)';
-                          const velLabel = isRising ? `+${t.velocity}%` : isFalling ? `${t.velocity}%` : 'stable';
-                          const arrow = isRising ? '↑' : isFalling ? '↓' : '→';
-                          return (
-                            <div style={{ marginBottom: 10 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: vals.length > 2 ? 3 : 0 }}>
-                                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>google trends</span>
-                                <span style={{ fontSize: 9, fontFamily: 'monospace', color: lineColor, fontWeight: 500 }}>{velLabel} {arrow}</span>
-                              </div>
-                              {vals.length > 2 && (() => {
-                                const max = Math.max(...vals, 1);
-                                const W = 8;
-                                const H = 22;
-                                const pts = vals.map((v: number, i: number) => `${i * W + W / 2},${H - Math.round((v / max) * (H - 2)) - 1}`).join(' ');
-                                return (
-                                  <svg width="100%" height={H} viewBox={`0 0 ${vals.length * W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-                                    <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
-                                  </svg>
-                                );
-                              })()}
-                            </div>
-                          );
-                        })()}
+
 
                         {/* Example quotes */}
                         {cluster.posts?.slice(0, 2).map((p: any, pi: number) => (
