@@ -140,6 +140,7 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     if (!id) return;
+    const briefId = id;
     const load = async () => {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=*`, {
         headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -154,6 +155,10 @@ export default function WorkspacePage() {
       }
       if (b.workspace_state) setWs(b.workspace_state);
       setLoading(false);
+      // Fetch trends after load — pass id directly to avoid stale closure
+      if (b.clusters?.length > 0) {
+        setTimeout(() => fetchTrends(briefId), 800);
+      }
     };
     load();
   }, [id]);
@@ -179,26 +184,27 @@ export default function WorkspacePage() {
       if (bData[0]?.collected_posts_full) setPosts(bData[0].collected_posts_full);
     }
     setClustering(false);
+    setTimeout(() => fetchTrends(id), 500);
   };
 
-  const fetchTrends = useCallback(async () => {
-    if (!id) return;
+  const fetchTrends = async (briefIdOverride?: string) => {
+    const bid = briefIdOverride || id;
+    if (!bid) return;
     setTrendsLoading(true);
     try {
       const res = await fetch('/api/trends', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ briefId: id })
+        body: JSON.stringify({ briefId: bid })
       });
       const data = await res.json();
-      if (data.success) setTrends(data.trends);
+      if (data.success && data.trends) {
+        setTrends(data.trends);
+        console.log('Trends loaded:', Object.keys(data.trends).length, 'clusters');
+      }
     } catch (e) { console.error('Trends failed:', e); }
     setTrendsLoading(false);
-  }, [id]);
-
-  useEffect(() => {
-    if (clusters.length > 0) fetchTrends();
-  }, [clusters.length, fetchTrends]);
+  };
 
   const updateWs = (update: Partial<WorkspaceState>) => {
     const newWs = { ...ws, ...update };
