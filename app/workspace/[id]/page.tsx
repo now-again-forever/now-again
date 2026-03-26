@@ -43,6 +43,34 @@ function scoreDrivers(posts: any[]): Record<string, number> {
 
 const BUCKET_COLORS = ['#5DCAA5','#AFA9EC','#F0997B','#85B7EB','#FAC775','#ED93B1','#97C459'];
 
+function calcMetrics(posts: any[]) {
+  if (!posts || posts.length === 0) return { energy: 0, temperature: 0, consumerRatio: 0, opportunity: 0 };
+
+  // ENERGY: % of posts with strong emotional language
+  const emotionWords = /\b(love|hate|obsessed|amazing|terrible|awful|brilliant|disgusting|incredible|furious|thrilled|devastated|addicted|cant stop|always|never|absolutely|completely|best|worst)\b/i;
+  const energyPosts = posts.filter(p => emotionWords.test(p.text || '')).length;
+  const energy = Math.round((energyPosts / posts.length) * 100);
+
+  // TEMPERATURE: ratio of recent posts (last 30 days) vs older
+  const now = Date.now();
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+  const recentPosts = posts.filter(p => {
+    const ts = p.timestamp ? new Date(p.timestamp).getTime() : 0;
+    return ts > 0 && (now - ts) < thirtyDays;
+  }).length;
+  const temperature = Math.round((recentPosts / posts.length) * 100);
+
+  // CONSUMER VOICE: % from social/community vs editorial/news
+  const consumerTypes = new Set(['youtube','bluesky','mastodon','web']);
+  const consumerPosts = posts.filter(p => consumerTypes.has(p.type || '')).length;
+  const consumerRatio = Math.round((consumerPosts / posts.length) * 100);
+
+  // OPPORTUNITY SCORE: weighted combo
+  const opportunity = Math.round((energy * 0.4) + (temperature * 0.3) + (consumerRatio * 0.3));
+
+  return { energy, temperature, consumerRatio, opportunity };
+}
+
 interface Cluster { name: string; description: string; count: number; posts: any[]; }
 interface Bucket { id: string; name: string; color: string; postIndices: number[]; }
 interface WorkspaceState { starred: number[]; binned: number[]; buckets: Bucket[]; postBuckets: Record<number, string>; selectedClusters: string[]; }
@@ -64,6 +92,7 @@ export default function WorkspacePage() {
   const [hints, setHints] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [editingBucket, setEditingBucket] = useState<string | null>(null);
+  const [clusterSort, setClusterSort] = useState<'size' | 'energy' | 'temperature' | 'opportunity'>('opportunity');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const saveWs = useCallback(async (newWs: WorkspaceState) => {
@@ -171,15 +200,23 @@ export default function WorkspacePage() {
         headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
         body: JSON.stringify({ status: 'collected', workspace_state: ws })
       });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 55000);
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ briefId: id, buckets: ws.buckets })
+        body: JSON.stringify({ briefId: id, buckets: ws.buckets }),
+        signal: controller.signal
       });
+      clearTimeout(timeout);
       const data = await res.json();
       if (data.success) window.location.href = `/results/${id}`;
-      else { setGenerating(false); alert('Generation failed — try again'); }
-    } catch { setGenerating(false); alert('Something went wrong'); }
+      else { setGenerating(false); alert('Generation failed: ' + (data.error || 'unknown')); }
+    } catch (e: any) {
+      setGenerating(false);
+      if (e.name === 'AbortError') alert('Timed out — try with fewer buckets');
+      else alert('Something went wrong: ' + e.message);
+    }
   };
 
   // Posts visible in reading stage — from selected clusters
@@ -188,7 +225,7 @@ export default function WorkspacePage() {
     const clusterPostSets = ws.selectedClusters.map(name => clusters.find(c => c.name === name)?.posts || []);
     const allClusterPosts = clusterPostSets.flat();
     return posts.map((p, i) => ({ ...p, _idx: i })).filter(p =>
-      allClusterPosts.some(cp => cp.text === p.text) && !ws.binned.includes(p._idx)
+      allClusterPosts.some(cp => cp.text === p.text) && !ws.binned.includes(i)
     );
   })() : [];
 
@@ -233,7 +270,12 @@ export default function WorkspacePage() {
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}><span style={{ color: '#f5f3ee' }}>{posts.length}</span> posts · <span style={{ color: '#c8b89a' }}>{ws.starred.length}</span> starred · <span style={{ color: '#f5f3ee' }}>{ws.buckets.length}</span> buckets</div>
         <button onClick={generateFromBuckets} disabled={ws.buckets.length === 0 || generating}
           style={{ background: '#f5f3ee', color: '#0e0d0b', border: 'none', padding: '7px 16px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: ws.buckets.length > 0 ? 'pointer' : 'not-allowed', opacity: ws.buckets.length === 0 ? 0.4 : 1, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-          {generating ? 'Generating...' : `Generate insights →`}
+          {generating ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid rgba(0,0,0,0.2)', borderTop: '1.5px solid #0e0d0b', animation: 'spin 0.8s linear infinite', flexShrink: 0, display: 'inline-block' }} />
+              Generating themes...
+            </span>
+          ) : `Generate insights →`}
         </button>
       </div>
 
@@ -268,10 +310,19 @@ export default function WorkspacePage() {
 
             {clusters.length > 0 && !clustering && (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
                     {ws.selectedClusters.length} of {clusters.length} selected
                   </span>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>Sort by</span>
+                    {(['opportunity','energy','temperature','size'] as const).map(s => (
+                      <button key={s} onClick={() => setClusterSort(s)}
+                        style={{ padding: '2px 8px', borderRadius: 20, border: `1px solid ${clusterSort === s ? 'rgba(200,184,154,0.4)' : 'rgba(255,255,255,0.07)'}`, background: clusterSort === s ? 'rgba(200,184,154,0.1)' : 'transparent', color: clusterSort === s ? '#c8b89a' : 'rgba(255,255,255,0.25)', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {s === 'opportunity' ? '✦ opportunity' : s === 'energy' ? '⚡ energy' : s === 'temperature' ? '🔥 hot' : '# size'}
+                      </button>
+                    ))}
+                  </div>
                   {ws.selectedClusters.length > 0 && (
                     <button onClick={() => { updateWs({ selectedClusters: [] }); }}
                       style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -289,7 +340,14 @@ export default function WorkspacePage() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-                  {clusters.map((cluster, ci) => {
+                  {[...clusters].sort((a, b) => {
+                    const ma = calcMetrics(a.posts);
+                    const mb = calcMetrics(b.posts);
+                    if (clusterSort === 'energy') return mb.energy - ma.energy;
+                    if (clusterSort === 'temperature') return mb.temperature - ma.temperature;
+                    if (clusterSort === 'opportunity') return mb.opportunity - ma.opportunity;
+                    return b.count - a.count;
+                  }).map((cluster, ci) => {
                     const selected = ws.selectedClusters.includes(cluster.name);
                     const maxCount = clusters[0]?.count || 1;
                     const pct = Math.round((cluster.count / maxCount) * 100);
@@ -307,9 +365,31 @@ export default function WorkspacePage() {
                           </div>
                         </div>
                         {/* Size bar */}
-                        <div style={{ height: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 8 }}>
+                        <div style={{ height: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 10 }}>
                           <div style={{ height: '100%', width: `${pct}%`, background: selected ? '#c8b89a' : 'rgba(255,255,255,0.15)', borderRadius: 1, transition: 'width 0.3s ease' }} />
                         </div>
+                        {/* Metrics */}
+                        {(() => {
+                          const m = calcMetrics(cluster.posts);
+                          return (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 10 }}>
+                              {[
+                                { label: 'opportunity', value: m.opportunity, icon: '✦', color: '#c8b89a' },
+                                { label: 'energy', value: m.energy, icon: '⚡', color: '#FAC775' },
+                                { label: 'hot', value: m.temperature, icon: '🔥', color: '#F0997B' },
+                                { label: 'consumer', value: m.consumerRatio, icon: '👥', color: '#5DCAA5' },
+                              ].map(metric => (
+                                <div key={metric.label} style={{ textAlign: 'center' }}>
+                                  <div style={{ fontSize: 14, marginBottom: 1 }}>{metric.icon}</div>
+                                  <div style={{ height: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 3 }}>
+                                    <div style={{ height: '100%', width: `${metric.value}%`, background: metric.color, borderRadius: 1, opacity: 0.7 }} />
+                                  </div>
+                                  <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>{metric.label}</div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         {/* Example quotes */}
                         {cluster.posts?.slice(0, 2).map((p: any, pi: number) => (
                           <div key={pi} style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontStyle: 'italic', lineHeight: 1.5, marginBottom: 3, paddingLeft: 6, borderLeft: `2px solid ${selected ? 'rgba(200,184,154,0.3)' : 'rgba(255,255,255,0.06)'}` }}>
@@ -547,14 +627,23 @@ export default function WorkspacePage() {
               <button onClick={async () => {
                 if (ws.starred.length === 0) return;
                 setGenerating(true);
-                await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }, body: JSON.stringify({ status: 'collected', workspace_state: ws }) });
-                const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ briefId: id }) });
-                const data = await res.json();
-                if (data.success) window.location.href = `/results/${id}`;
-                else { setGenerating(false); alert('Failed'); }
+                try {
+                  await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }, body: JSON.stringify({ status: 'collected', workspace_state: ws }) });
+                  const controller = new AbortController();
+                  const timeout = setTimeout(() => controller.abort(), 55000);
+                  const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ briefId: id }), signal: controller.signal });
+                  clearTimeout(timeout);
+                  const data = await res.json();
+                  if (data.success) window.location.href = `/results/${id}`;
+                  else { setGenerating(false); alert('Generation failed: ' + (data.error || 'unknown')); }
+                } catch (e: any) {
+                  setGenerating(false);
+                  if (e.name === 'AbortError') alert('Generation timed out — try with fewer posts');
+                  else alert('Something went wrong: ' + e.message);
+                }
               }} disabled={ws.starred.length === 0 || generating}
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: ws.starred.length > 0 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.15)', borderRadius: 6, padding: '7px', fontSize: 9, cursor: ws.starred.length > 0 ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
-                ★ {ws.starred.length} starred posts
+                {generating ? '...' : `★ ${ws.starred.length} starred posts`}
               </button>
               <button onClick={generateFromBuckets} disabled={ws.buckets.length === 0 || generating}
                 style={{ background: '#f5f3ee', color: '#0e0d0b', border: 'none', borderRadius: 6, padding: '7px', fontSize: 9, fontWeight: 500, cursor: ws.buckets.length > 0 ? 'pointer' : 'not-allowed', opacity: ws.buckets.length === 0 ? 0.4 : 1, fontFamily: 'inherit' }}>
