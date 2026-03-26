@@ -177,27 +177,12 @@ export default function WorkspacePage() {
         const newClusters = bData[0].clusters;
         setClusters(newClusters);
         // Fetch trends for top clusters
-        fetchTrends(newClusters);
+        fetchTrends();
       }
       if (bData[0]?.collected_posts_full) setPosts(bData[0].collected_posts_full);
     }
     setClustering(false);
     fetchTrends();
-  };
-
-  const fetchTrends = async (_clustersToFetch?: any[]) => {
-    if (!id) return;
-    setTrendsLoading(true);
-    try {
-      const res = await fetch('/api/trends', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ briefId: id })
-      });
-      const data = await res.json();
-      if (data.success) setTrends(data.trends);
-    } catch (e) { console.error('Trends fetch failed:', e); }
-    setTrendsLoading(false);
   };
 
   const fetchTrends = async () => {
