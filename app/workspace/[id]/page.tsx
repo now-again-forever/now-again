@@ -123,8 +123,7 @@ export default function WorkspacePage() {
   const [editingBucket, setEditingBucket] = useState<string | null>(null);
   const [clusterSort, setClusterSort] = useState<'size' | 'energy' | 'temperature' | 'opportunity' | 'tension' | 'marketSpread' | 'richness'>('opportunity');
   const [insightsPanelOpen, setInsightsPanelOpen] = useState(false);
-  const [trends, setTrends] = useState<Record<string, { values: number[]; velocity: number }>>({});
-  const [trendsLoading, setTrendsLoading] = useState(false);
+  const [trends, setTrends] = useState<Record<string, { values: number[]; velocity: number; keyword: string }>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const saveWs = useCallback(async (newWs: WorkspaceState) => {
@@ -138,28 +137,11 @@ export default function WorkspacePage() {
     }, 800);
   }, [id]);
 
-  const fetchTrends = async (briefIdOverride?: string) => {
-    const bid = briefIdOverride || id;
-    if (!bid) return;
-    setTrendsLoading(true);
-    try {
-      const res = await fetch('/api/trends', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ briefId: bid })
-      });
-      const data = await res.json();
-      if (data.success && data.trends) {
-        setTrends(data.trends);
-        console.log('Trends loaded:', Object.keys(data.trends).length, 'clusters');
-      }
-    } catch (e) { console.error('Trends failed:', e); }
-    setTrendsLoading(false);
-  };
+
 
   useEffect(() => {
     if (!id) return;
-    const briefId = id;
+    const bid = id;
     const load = async () => {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${id}&select=*`, {
         headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -175,9 +157,6 @@ export default function WorkspacePage() {
       if (b.workspace_state) setWs(b.workspace_state);
       setLoading(false);
       // Fetch trends after load — pass id directly to avoid stale closure
-      if (b.clusters?.length > 0) {
-        setTimeout(() => fetchTrends(briefId), 800);
-      }
     };
     load();
   }, [id]);
@@ -203,10 +182,17 @@ export default function WorkspacePage() {
       if (bData[0]?.collected_posts_full) setPosts(bData[0].collected_posts_full);
     }
     setClustering(false);
-    setTimeout(() => fetchTrends(id), 500);
+    loadTrends(id);
   };
 
 
+
+  const loadTrends = (bid: string) => {
+    fetch('/api/trends', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ briefId: bid }) })
+      .then(r => r.json())
+      .then(d => { if (d.success && d.trends) setTrends(d.trends); })
+      .catch(() => {});
+  };
 
   const updateWs = (update: Partial<WorkspaceState>) => {
     const newWs = { ...ws, ...update };
@@ -372,15 +358,48 @@ export default function WorkspacePage() {
               </div>
             )}
 
+            {/* GOOGLE TRENDS SIGNALS — standalone section */}
+            {Object.keys(trends).length > 0 && (() => {
+              const entries = Object.entries(trends);
+              const rising = entries.filter(([,t]) => (t as any).velocity > 8).sort((a,b) => (b[1] as any).velocity - (a[1] as any).velocity).slice(0,5);
+              const falling = entries.filter(([,t]) => (t as any).velocity < -8).sort((a,b) => (a[1] as any).velocity - (b[1] as any).velocity).slice(0,5);
+              if (rising.length === 0 && falling.length === 0) return null;
+              return (
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 12 }}>📈 Google Trends · search interest velocity</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: '#5DCAA5', fontFamily: 'monospace', marginBottom: 8 }}>↑ RISING</div>
+                      {rising.length === 0 ? <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>None detected</div> : rising.map(([name, t]) => (
+                        <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginBottom: 1 }}>{name}</div>
+                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>"{(t as any).keyword}"</div>
+                          </div>
+                          <span style={{ fontSize: 11, color: '#5DCAA5', fontFamily: 'monospace', fontWeight: 500 }}>+{(t as any).velocity}%</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9, color: '#F0997B', fontFamily: 'monospace', marginBottom: 8 }}>↓ FADING</div>
+                      {falling.length === 0 ? <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>None detected</div> : falling.map(([name, t]) => (
+                        <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginBottom: 1 }}>{name}</div>
+                            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>"{(t as any).keyword}"</div>
+                          </div>
+                          <span style={{ fontSize: 11, color: '#F0997B', fontFamily: 'monospace', fontWeight: 500 }}>{(t as any).velocity}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {clusters.length > 0 && !clustering && (
               <>
-                {/* RAW TRENDS DUMP — REMOVE AFTER DEBUGGING */}
-                <div style={{ background: 'rgba(93,202,165,0.1)', border: '1px solid #5DCAA5', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 10, color: '#5DCAA5', fontFamily: 'monospace' }}>
-                  trends state: {Object.keys(trends).length} keys
-                  {Object.entries(trends).slice(0,3).map(([k,v]) => (
-                    <div key={k}>{k}: velocity={(v as any).velocity} values={(v as any).values?.length}</div>
-                  ))}
-                </div>
+
 
                 {/* DATA OVERVIEW PANEL */}
                 {(() => {
