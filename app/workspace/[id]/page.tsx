@@ -339,6 +339,23 @@ export default function WorkspacePage() {
                   </button>
                 </div>
 
+                <div style={{ display: 'flex', gap: 16, marginBottom: 14, padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
+                  {[
+                    { icon: '✦', color: '#c8b89a', label: 'Opportunity', desc: 'Composite score — energy + recency + consumer voice' },
+                    { icon: '⚡', color: '#FAC775', label: 'Energy', desc: 'Emotional intensity — how strongly people feel about this' },
+                    { icon: '🔥', color: '#F0997B', label: 'Hot', desc: 'Recency signal — how much of this is from the last 30 days' },
+                    { icon: '👥', color: '#5DCAA5', label: 'Consumer', desc: 'Grassroots vs media — social & YouTube vs news & editorial' },
+                  ].map(m => (
+                    <div key={m.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, minWidth: 160 }}>
+                      <span style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }}>{m.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 500, color: m.color, marginBottom: 1 }}>{m.label}</div>
+                        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', lineHeight: 1.4 }}>{m.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
                   {[...clusters].sort((a, b) => {
                     const ma = calcMetrics(a.posts);
