@@ -43,32 +43,61 @@ function scoreDrivers(posts: any[]): Record<string, number> {
 
 const BUCKET_COLORS = ['#5DCAA5','#AFA9EC','#F0997B','#85B7EB','#FAC775','#ED93B1','#97C459'];
 
-function calcMetrics(posts: any[]) {
-  if (!posts || posts.length === 0) return { energy: 0, temperature: 0, consumerRatio: 0, opportunity: 0 };
+function calcMetrics(posts: any[], brief?: any) {
+  if (!posts || posts.length === 0) return { energy: 0, temperature: 0, consumerRatio: 0, opportunity: 0, tension: 0, marketSpread: 0, richness: 0, brandRelevance: 0 };
+
+  const n = posts.length;
 
   // ENERGY: % of posts with strong emotional language
-  const emotionWords = /\b(love|hate|obsessed|amazing|terrible|awful|brilliant|disgusting|incredible|furious|thrilled|devastated|addicted|cant stop|always|never|absolutely|completely|best|worst)\b/i;
-  const energyPosts = posts.filter(p => emotionWords.test(p.text || '')).length;
-  const energy = Math.round((energyPosts / posts.length) * 100);
+  const emotionWords = /\b(love|hate|obsessed|amazing|terrible|awful|brilliant|disgusting|incredible|furious|thrilled|devastated|addicted|always|never|absolutely|completely|best|worst|shocked|surprised|disappointed|excited)\b/i;
+  const energy = Math.round((posts.filter(p => emotionWords.test(p.text || '')).length / n) * 100);
 
-  // TEMPERATURE: ratio of recent posts (last 30 days) vs older
+  // TEMPERATURE: % of posts from last 30 days
   const now = Date.now();
   const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-  const recentPosts = posts.filter(p => {
+  const temperature = Math.round((posts.filter(p => {
     const ts = p.timestamp ? new Date(p.timestamp).getTime() : 0;
     return ts > 0 && (now - ts) < thirtyDays;
+  }).length / n) * 100);
+
+  // CONSUMER VOICE: % from social vs editorial
+  const consumerTypes = new Set(['youtube','bluesky','mastodon','web','tavily']);
+  const consumerRatio = Math.round((posts.filter(p => consumerTypes.has(p.type || '')).length / n) * 100);
+
+  // TENSION: % of posts with conflicting sentiment signals
+  const posWords = /\b(love|great|amazing|brilliant|best|perfect|excellent|fantastic|wonderful|good)\b/i;
+  const negWords = /\b(hate|terrible|awful|worst|bad|disappointing|horrible|disgusting|annoying|frustrating)\b/i;
+  const tensionPosts = posts.filter(p => {
+    const t = p.text || '';
+    return posWords.test(t) && negWords.test(t);
   }).length;
-  const temperature = Math.round((recentPosts / posts.length) * 100);
+  const tension = Math.round((tensionPosts / n) * 100);
 
-  // CONSUMER VOICE: % from social/community vs editorial/news
-  const consumerTypes = new Set(['youtube','bluesky','mastodon','web']);
-  const consumerPosts = posts.filter(p => consumerTypes.has(p.type || '')).length;
-  const consumerRatio = Math.round((consumerPosts / posts.length) * 100);
+  // MARKET SPREAD: how many distinct markets represented (0-100 scaled to selected markets count)
+  const markets = new Set(posts.map(p => p.country).filter(c => c && c !== 'Global' && c !== 'unknown'));
+  const marketSpread = Math.min(100, Math.round((markets.size / Math.max(1, 5)) * 100));
 
-  // OPPORTUNITY SCORE: weighted combo
-  const opportunity = Math.round((energy * 0.4) + (temperature * 0.3) + (consumerRatio * 0.3));
+  // RICHNESS: average post length as proxy for depth of engagement
+  const avgLen = posts.reduce((sum, p) => sum + (p.text?.length || 0), 0) / n;
+  const richness = Math.min(100, Math.round((avgLen / 300) * 100));
 
-  return { energy, temperature, consumerRatio, opportunity };
+  // BRAND RELEVANCE: how often brief brand/category terms appear
+  let brandRelevance = 0;
+  if (brief) {
+    const brandTerms = [...(brief.brand || '').toLowerCase().split(/\s+/), ...(brief.category || '').toLowerCase().split(/\s+/)].filter(w => w.length > 3);
+    if (brandTerms.length > 0) {
+      const relevant = posts.filter(p => {
+        const t = (p.text || '').toLowerCase();
+        return brandTerms.some(term => t.includes(term));
+      }).length;
+      brandRelevance = Math.round((relevant / n) * 100);
+    }
+  }
+
+  // OPPORTUNITY: weighted composite
+  const opportunity = Math.round((energy * 0.25) + (temperature * 0.2) + (consumerRatio * 0.2) + (tension * 0.2) + (richness * 0.15));
+
+  return { energy, temperature, consumerRatio, opportunity, tension, marketSpread, richness, brandRelevance };
 }
 
 interface Cluster { name: string; description: string; count: number; posts: any[]; }
@@ -92,7 +121,7 @@ export default function WorkspacePage() {
   const [hints, setHints] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [editingBucket, setEditingBucket] = useState<string | null>(null);
-  const [clusterSort, setClusterSort] = useState<'size' | 'energy' | 'temperature' | 'opportunity'>('opportunity');
+  const [clusterSort, setClusterSort] = useState<'size' | 'energy' | 'temperature' | 'opportunity' | 'tension' | 'marketSpread' | 'richness'>('opportunity');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const saveWs = useCallback(async (newWs: WorkspaceState) => {
@@ -310,16 +339,64 @@ export default function WorkspacePage() {
 
             {clusters.length > 0 && !clustering && (
               <>
+                {/* DATA OVERVIEW PANEL */}
+                {(() => {
+                  const sourceBreakdown = posts.reduce((acc: Record<string,number>, p: any) => {
+                    const src = p.type === 'youtube' ? 'YouTube' : p.type === 'bluesky' ? 'Bluesky' : p.type === 'newsdata' || p.type === 'hn' ? 'News' : p.type === 'wikipedia' ? 'Wikipedia' : p.type === 'autocomplete' ? 'Search intent' : 'Web';
+                    acc[src] = (acc[src] || 0) + 1;
+                    return acc;
+                  }, {});
+                  const marketBreakdown = [...new Set(posts.map((p: any) => p.country).filter((c: string) => c && c !== 'Global' && c !== 'unknown'))];
+                  const dates = posts.map((p: any) => p.timestamp ? new Date(p.timestamp).getTime() : 0).filter(Boolean);
+                  const oldest = dates.length > 0 ? new Date(Math.min(...dates)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '—';
+                  const newest = dates.length > 0 ? new Date(Math.max(...dates)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '—';
+                  const maxSrc = Math.max(...Object.values(sourceBreakdown) as number[], 1);
+                  return (
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 12 }}>Data overview</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', marginBottom: 8 }}>SOURCE BREAKDOWN</div>
+                          {Object.entries(sourceBreakdown).sort((a,b) => (b[1] as number)-(a[1] as number)).map(([src, count]) => (
+                            <div key={src} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', width: 72, flexShrink: 0 }}>{src}</div>
+                              <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
+                                <div style={{ height: '100%', width: `${Math.round(((count as number)/maxSrc)*100)}%`, background: '#c8b89a', borderRadius: 2, opacity: 0.6 }} />
+                              </div>
+                              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', width: 28, textAlign: 'right' }}>{count as number}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', marginBottom: 8 }}>MARKETS</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {marketBreakdown.slice(0, 8).map((m: string) => (
+                              <span key={m} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(200,184,154,0.1)', color: '#c8b89a', fontFamily: 'monospace' }}>{m}</span>
+                            ))}
+                          </div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>{marketBreakdown.length} markets · {posts.length} posts</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', marginBottom: 8 }}>DATE RANGE</div>
+                          <div style={{ fontSize: 20, fontFamily: 'Georgia, serif', color: 'rgba(255,255,255,0.5)', lineHeight: 1, marginBottom: 4 }}>{posts.length.toLocaleString()}</div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>conversations collected</div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 6, fontFamily: 'monospace' }}>{oldest} → {newest}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
                     {ws.selectedClusters.length} of {clusters.length} selected
                   </span>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
                     <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>Sort by</span>
-                    {(['opportunity','energy','temperature','size'] as const).map(s => (
-                      <button key={s} onClick={() => setClusterSort(s)}
-                        style={{ padding: '2px 8px', borderRadius: 20, border: `1px solid ${clusterSort === s ? 'rgba(200,184,154,0.4)' : 'rgba(255,255,255,0.07)'}`, background: clusterSort === s ? 'rgba(200,184,154,0.1)' : 'transparent', color: clusterSort === s ? '#c8b89a' : 'rgba(255,255,255,0.25)', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        {s === 'opportunity' ? '✦ opportunity' : s === 'energy' ? '⚡ energy' : s === 'temperature' ? '🔥 hot' : '# size'}
+                    {([['opportunity','✦ opportunity'],['energy','⚡ energy'],['temperature','🔥 hot'],['tension','⚡️ tension'],['marketSpread','🌐 spread'],['richness','📝 depth'],['size','# size']] as const).map(([s, label]) => (
+                      <button key={s} onClick={() => setClusterSort(s as any)}
+                        style={{ padding: '2px 8px', borderRadius: 20, border: `1px solid ${clusterSort === s ? 'rgba(200,184,154,0.4)' : 'rgba(255,255,255,0.07)'}`, background: clusterSort === s ? 'rgba(200,184,154,0.1)' : 'transparent', color: clusterSort === s ? '#c8b89a' : 'rgba(255,255,255,0.25)', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                        {label}
                       </button>
                     ))}
                   </div>
@@ -339,24 +416,65 @@ export default function WorkspacePage() {
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: 16, marginBottom: 14, padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
-                  {[
-                    { icon: '✦', color: '#c8b89a', label: 'Opportunity', desc: 'Composite score — energy + recency + consumer voice' },
-                    { icon: '⚡', color: '#FAC775', label: 'Energy', desc: 'Emotional intensity — how strongly people feel about this' },
-                    { icon: '🔥', color: '#F0997B', label: 'Hot', desc: 'Recency signal — how much of this is from the last 30 days' },
-                    { icon: '👥', color: '#5DCAA5', label: 'Consumer', desc: 'Grassroots vs media — social & YouTube vs news & editorial' },
-                  ].map(m => (
-                    <div key={m.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, minWidth: 160 }}>
-                      <span style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }}>{m.icon}</span>
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 500, color: m.color, marginBottom: 1 }}>{m.label}</div>
-                        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', lineHeight: 1.4 }}>{m.desc}</div>
+                {/* DATASET INSIGHTS PANEL */}
+                {(() => {
+                  const allMetrics = clusters.map(c => calcMetrics(c.posts, brief));
+                  const avg = (key: string) => Math.round(allMetrics.reduce((s, m) => s + (m as any)[key], 0) / Math.max(1, allMetrics.length));
+                  const avgTension = avg('tension');
+                  const avgSpread = avg('marketSpread');
+                  const avgDepth = avg('richness');
+                  const avgOnBrief = avg('brandRelevance');
+                  // Most tense cluster
+                  const mostTense = [...clusters].sort((a,b) => calcMetrics(b.posts,brief).tension - calcMetrics(a.posts,brief).tension)[0];
+                  // Most cross-market
+                  const mostSpread = [...clusters].sort((a,b) => calcMetrics(b.posts,brief).marketSpread - calcMetrics(a.posts,brief).marketSpread)[0];
+                  // Most on-brief
+                  const mostRelevant = [...clusters].sort((a,b) => calcMetrics(b.posts,brief).brandRelevance - calcMetrics(a.posts,brief).brandRelevance)[0];
+                  return (
+                    <div style={{ background: 'rgba(200,184,154,0.05)', border: '1px solid rgba(200,184,154,0.15)', borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
+                      <div style={{ fontSize: 9, color: '#c8b89a', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 14 }}>Dataset quick insights</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#AFA9EC', lineHeight: 1 }}>{avgTension}</span>
+                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>⚡️ Dataset tension</div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>Avg % of posts with conflicting views. High = unresolved cultural space.</div>
+                          {mostTense && <div style={{ fontSize: 9, color: '#AFA9EC', marginTop: 6 }}>Most tense: <em>{mostTense.name}</em></div>}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#85B7EB', lineHeight: 1 }}>{avgSpread}</span>
+                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>🌐 Market spread</div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>How universal the conversations are. High = cross-market signal.</div>
+                          {mostSpread && <div style={{ fontSize: 9, color: '#85B7EB', marginTop: 6 }}>Most universal: <em>{mostSpread.name}</em></div>}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#9FE1CB', lineHeight: 1 }}>{avgDepth}</span>
+                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>📝 Conversation depth</div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>Average richness of posts. Long thoughtful posts vs short reactions.</div>
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#ED93B1', lineHeight: 1 }}>{avgOnBrief}</span>
+                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>🎯 On-brief relevance</div>
+                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>How often brand/category terms appear. High = directly on-brief.</div>
+                          {mostRelevant && <div style={{ fontSize: 9, color: '#ED93B1', marginTop: 6 }}>Most relevant: <em>{mostRelevant.name}</em></div>}
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10 }}>
                   {[...clusters].sort((a, b) => {
                     const ma = calcMetrics(a.posts);
                     const mb = calcMetrics(b.posts);
@@ -387,21 +505,22 @@ export default function WorkspacePage() {
                         </div>
                         {/* Metrics */}
                         {(() => {
-                          const m = calcMetrics(cluster.posts);
+                          const m = calcMetrics(cluster.posts, brief);
                           return (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 10 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                               {[
-                                { label: 'opportunity', value: m.opportunity, icon: '✦', color: '#c8b89a' },
-                                { label: 'energy', value: m.energy, icon: '⚡', color: '#FAC775' },
-                                { label: 'hot', value: m.temperature, icon: '🔥', color: '#F0997B' },
-                                { label: 'consumer', value: m.consumerRatio, icon: '👥', color: '#5DCAA5' },
+                                { label: 'opportunity', value: m.opportunity, color: '#c8b89a' },
+                                { label: 'hot', value: m.temperature, color: '#F0997B' },
+                                { label: 'consumer', value: m.consumerRatio, color: '#5DCAA5' },
                               ].map(metric => (
-                                <div key={metric.label} style={{ textAlign: 'center' }}>
-                                  <div style={{ fontSize: 14, marginBottom: 1 }}>{metric.icon}</div>
-                                  <div style={{ height: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 3 }}>
-                                    <div style={{ height: '100%', width: `${metric.value}%`, background: metric.color, borderRadius: 1, opacity: 0.7 }} />
+                                <div key={metric.label}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                                    <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>{metric.label}</span>
+                                    <span style={{ fontSize: 8, color: metric.color, fontFamily: 'monospace' }}>{metric.value}</span>
                                   </div>
-                                  <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>{metric.label}</div>
+                                  <div style={{ height: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 1 }}>
+                                    <div style={{ height: '100%', width: `${metric.value}%`, background: metric.color, borderRadius: 1, opacity: 0.8, transition: 'width 0.4s ease' }} />
+                                  </div>
                                 </div>
                               ))}
                             </div>
