@@ -374,6 +374,12 @@ export default function WorkspacePage() {
 
             {clusters.length > 0 && !clustering && (
               <>
+                {/* TRENDS DEBUG */}
+                {Object.keys(trends).length > 0 && (
+                  <div style={{ fontSize: 9, color: '#5DCAA5', fontFamily: 'monospace', marginBottom: 8, padding: '4px 8px', background: 'rgba(93,202,165,0.1)', borderRadius: 4 }}>
+                    ✓ Trends loaded for {Object.keys(trends).length} clusters
+                  </div>
+                )}
                 {/* DATA OVERVIEW PANEL */}
                 {(() => {
                   const sourceBreakdown = posts.reduce((acc: Record<string,number>, p: any) => {
