@@ -374,6 +374,13 @@ export default function WorkspacePage() {
 
             {clusters.length > 0 && !clustering && (
               <>
+                {/* RAW TRENDS DUMP — REMOVE AFTER DEBUGGING */}
+                <div style={{ background: 'rgba(93,202,165,0.1)', border: '1px solid #5DCAA5', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 10, color: '#5DCAA5', fontFamily: 'monospace' }}>
+                  trends state: {Object.keys(trends).length} keys
+                  {Object.entries(trends).slice(0,3).map(([k,v]) => (
+                    <div key={k}>{k}: velocity={(v as any).velocity} values={(v as any).values?.length}</div>
+                  ))}
+                </div>
 
                 {/* DATA OVERVIEW PANEL */}
                 {(() => {
