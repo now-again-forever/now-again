@@ -175,21 +175,13 @@ export default function WorkspacePage() {
       if (bData[0]?.clusters) {
         const newClusters = bData[0].clusters;
         setClusters(newClusters);
-        // Fetch trends for top clusters
-        fetchTrends();
       }
       if (bData[0]?.collected_posts_full) setPosts(bData[0].collected_posts_full);
     }
     setClustering(false);
   };
 
-  useEffect(() => {
-    if (clusters.length > 0 && id && Object.keys(trends).length === 0) {
-      fetchTrends();
-    }
-  }, [clusters, id]);
-
-  const fetchTrends = async () => {
+  const fetchTrends = useCallback(async () => {
     if (!id) return;
     setTrendsLoading(true);
     try {
@@ -202,7 +194,11 @@ export default function WorkspacePage() {
       if (data.success) setTrends(data.trends);
     } catch (e) { console.error('Trends failed:', e); }
     setTrendsLoading(false);
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (clusters.length > 0) fetchTrends();
+  }, [clusters.length, fetchTrends]);
 
   const updateWs = (update: Partial<WorkspaceState>) => {
     const newWs = { ...ws, ...update };
