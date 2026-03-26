@@ -594,40 +594,19 @@ export default function WorkspacePage() {
                             </div>
                           );
                         })()}
-                        {/* Trend sparkline */}
+                        {/* Velocity badge */}
                         {(() => {
                           const t = trends[cluster.name];
-                          if (!t || t.values.length === 0) return trendsLoading ? (
-                            <div style={{ height: 24, display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', fontFamily: 'monospace' }}>fetching trend data...</span>
-                            </div>
-                          ) : null;
-                          const max = Math.max(...t.values, 1);
-                          const w = 100 / t.values.length;
-                          const isRising = t.velocity > 5;
-                          const isFalling = t.velocity < -5;
-                          const velColor = isRising ? '#5DCAA5' : isFalling ? '#F0997B' : 'rgba(255,255,255,0.3)';
-                          const velLabel = isRising ? `+${t.velocity}%` : isFalling ? `${t.velocity}%` : 'stable';
+                          if (!t) return null;
+                          const isRising = t.velocity > 10;
+                          const isFalling = t.velocity < -10;
+                          const color = isRising ? '#5DCAA5' : isFalling ? '#F0997B' : 'rgba(255,255,255,0.25)';
+                          const label = isRising ? `↑ rising` : isFalling ? `↓ fading` : `→ stable`;
                           return (
-                            <div style={{ marginBottom: 10 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>google trends · 12 weeks</span>
-                                <span style={{ fontSize: 9, color: velColor, fontFamily: 'monospace', fontWeight: 500 }}>{velLabel} {isRising ? '↑' : isFalling ? '↓' : '→'}</span>
-                              </div>
-                              <svg width="100%" height="28" viewBox={`0 0 ${t.values.length * 8} 28`} preserveAspectRatio="none" style={{ display: 'block' }}>
-                                <polyline
-                                  points={t.values.map((v, i) => `${i * 8 + 4},${28 - Math.round((v / max) * 24)}`).join(' ')}
-                                  fill="none"
-                                  stroke={velColor}
-                                  strokeWidth="1.5"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  opacity="0.7"
-                                />
-                                {t.values.map((v, i) => (
-                                  <circle key={i} cx={i * 8 + 4} cy={28 - Math.round((v / max) * 24)} r="1.5" fill={velColor} opacity="0.5" />
-                                ))}
-                              </svg>
+                            <div style={{ marginBottom: 8 }}>
+                              <span style={{ fontSize: 9, color, fontFamily: 'monospace', padding: '2px 7px', borderRadius: 20, background: isRising ? 'rgba(93,202,165,0.1)' : isFalling ? 'rgba(240,153,123,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${isRising ? 'rgba(93,202,165,0.2)' : isFalling ? 'rgba(240,153,123,0.2)' : 'rgba(255,255,255,0.06)'}` }}>
+                                {label}
+                              </span>
                             </div>
                           );
                         })()}
