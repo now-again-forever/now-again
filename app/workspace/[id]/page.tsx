@@ -185,14 +185,14 @@ export default function WorkspacePage() {
     setClustering(false);
   };
 
-  const fetchTrends = async (clustersToFetch: any[]) => {
+  const fetchTrends = async (_clustersToFetch?: any[]) => {
+    if (!id) return;
     setTrendsLoading(true);
     try {
-      const keywords = clustersToFetch.slice(0, 5).map((c: any) => c.name);
       const res = await fetch('/api/trends', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keywords, markets: brief?.markets || [] })
+        body: JSON.stringify({ briefId: id })
       });
       const data = await res.json();
       if (data.success) setTrends(data.trends);

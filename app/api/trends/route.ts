@@ -1,102 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
-
-// Google Trends via RSS (no auth, works from server)
-async function fetchTrendsRSS(keyword: string, geo: string = 'US'): Promise<number[]> {
-  try {
-    const url = `https://trends.google.com/trends/api/dailytrends?hl=en-US&tz=0&geo=${geo}&ns=15`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(6000)
-    });
-    const text = await res.text();
-    const json = JSON.parse(text.replace(/^\)\]\}',\n/, ''));
-    const days = json?.default?.trendingSearchesDays || [];
-    // Count how many days this keyword appears in trending
-    const kw = keyword.toLowerCase();
-    const hits = days.map((day: any) =>
-      (day.trendingSearches || []).filter((s: any) =>
-        (s.title?.query || '').toLowerCase().includes(kw) ||
-        (s.relatedQueries || []).some((q: any) => q.query?.toLowerCase().includes(kw))
-      ).length
-    );
-    return hits.length > 0 ? hits : [];
-  } catch { return []; }
-}
-
-// Fallback: use Tavily to search for recent content volume as trend proxy
-async function fetchTavilyTrend(keyword: string): Promise<{ values: number[]; velocity: number }> {
-  if (!TAVILY_API_KEY) return { values: [], velocity: 0 };
-  try {
-    // Search for recent vs older content — use date-scoped queries
-    const [recentRes, olderRes] = await Promise.all([
-      fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: TAVILY_API_KEY, query: keyword, search_depth: 'basic', max_results: 10, days: 30 }),
-        signal: AbortSignal.timeout(8000)
-      }),
-      fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: TAVILY_API_KEY, query: keyword, search_depth: 'basic', max_results: 10, days: 90 }),
-        signal: AbortSignal.timeout(8000)
-      })
-    ]);
-
-    const [recentData, olderData] = await Promise.all([recentRes.json(), olderRes.json()]);
-    const recentCount = recentData.results?.length || 0;
-    const olderCount = olderData.results?.length || 0;
-
-    // Build a synthetic 12-week trend from result scores
-    const recentScores = (recentData.results || []).map((r: any) => Math.round((r.score || 0) * 100));
-    const olderScores = (olderData.results || []).map((r: any) => Math.round((r.score || 0) * 100));
-
-    // Combine into 12 pseudo-weekly values
-    const values: number[] = [];
-    for (let i = 0; i < 12; i++) {
-      if (i < 8) {
-        values.push(olderScores[i % olderScores.length] || Math.round(Math.random() * 40 + 20));
-      } else {
-        values.push(recentScores[(i - 8) % Math.max(recentScores.length, 1)] || Math.round(Math.random() * 40 + 30));
-      }
-    }
-
-    // Velocity: recent 30d vs prior 60d
-    const avgRecent = recentScores.reduce((s: number, v: number) => s + v, 0) / Math.max(recentScores.length, 1);
-    const avgOlder = olderScores.reduce((s: number, v: number) => s + v, 0) / Math.max(olderScores.length, 1);
-    const velocity = avgOlder > 0 ? Math.round(((avgRecent - avgOlder) / avgOlder) * 100) : 0;
-
-    return { values, velocity };
-  } catch (e) {
-    console.error('Tavily trend error:', e);
-    return { values: [], velocity: 0 };
-  }
-}
-
-const GEO_MAP: Record<string, string> = {
-  UK: 'GB', US: 'US', USA: 'US', FR: 'FR', France: 'FR',
-  ES: 'ES', Spain: 'ES', DE: 'DE', Germany: 'DE', PL: 'PL', TR: 'TR', Global: 'US'
-};
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export async function POST(req: NextRequest) {
   try {
-    const { keywords, markets } = await req.json();
+    const { briefId } = await req.json();
+
+    const briefRes = await fetch(`${SUPABASE_URL}/rest/v1/briefs?id=eq.${briefId}&select=collected_posts_full,clusters`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    const brief = (await briefRes.json())[0];
+    if (!brief) return NextResponse.json({ success: false });
+
+    const allPosts: any[] = brief.collected_posts_full || [];
+    const clusters: any[] = brief.clusters || [];
+
+    // Build 8-week buckets from actual post timestamps
+    const now = Date.now();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const NUM_WEEKS = 8;
 
     const results: Record<string, { values: number[]; velocity: number }> = {};
 
-    // Run all trend fetches in parallel
-    await Promise.all((keywords || []).slice(0, 6).map(async (kw: string) => {
-      const data = await fetchTavilyTrend(kw);
-      results[kw] = data;
-    }));
+    for (const cluster of clusters) {
+      const clusterPosts: any[] = cluster.posts || [];
+      if (clusterPosts.length === 0) {
+        results[cluster.name] = { values: [], velocity: 0 };
+        continue;
+      }
 
-    console.log('Trends fetched for:', Object.keys(results).join(', '));
+      // Count posts per week bucket
+      const buckets = new Array(NUM_WEEKS).fill(0);
+      let datedCount = 0;
+
+      for (const post of clusterPosts) {
+        const ts = post.timestamp ? new Date(post.timestamp).getTime() : 0;
+        if (!ts || ts <= 0) continue;
+        const weeksAgo = Math.floor((now - ts) / weekMs);
+        if (weeksAgo >= 0 && weeksAgo < NUM_WEEKS) {
+          buckets[NUM_WEEKS - 1 - weeksAgo]++;
+          datedCount++;
+        }
+      }
+
+      // If too few dated posts, fall back to a flat line showing cluster size
+      if (datedCount < 3) {
+        const flatVal = Math.min(clusterPosts.length, 10);
+        results[cluster.name] = {
+          values: new Array(NUM_WEEKS).fill(flatVal),
+          velocity: 0
+        };
+        continue;
+      }
+
+      // Velocity: compare last 2 weeks vs prior 4 weeks
+      const recentAvg = (buckets[6] + buckets[7]) / 2;
+      const olderAvg = (buckets[2] + buckets[3] + buckets[4] + buckets[5]) / 4;
+      const velocity = olderAvg > 0
+        ? Math.round(((recentAvg - olderAvg) / olderAvg) * 100)
+        : recentAvg > 0 ? 50 : 0;
+
+      results[cluster.name] = { values: buckets, velocity };
+    }
+
     return NextResponse.json({ success: true, trends: results });
 
   } catch (err) {
-    console.error('Trends route error:', err);
+    console.error('Trends error:', err);
     return NextResponse.json({ success: false, trends: {} });
   }
 }
