@@ -420,7 +420,7 @@ export default function WorkspacePage() {
                   </span>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
                     <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>Sort by</span>
-                    {([['opportunity','✦ opportunity'],['temperature','🔥 recent'],['size','# size']] as const).map(([s, label]) => (
+                    {([['opportunity','✦ opportunity'],['temperature','↑ recent'],['size','# size']] as const).map(([s, label]) => (
                       <button key={s} onClick={() => setClusterSort(s as any)}
                         style={{ padding: '2px 8px', borderRadius: 20, border: `1px solid ${clusterSort === s ? 'rgba(200,184,154,0.4)' : 'rgba(255,255,255,0.07)'}`, background: clusterSort === s ? 'rgba(200,184,154,0.1)' : 'transparent', color: clusterSort === s ? '#c8b89a' : 'rgba(255,255,255,0.25)', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                         {label}
@@ -578,7 +578,7 @@ export default function WorkspacePage() {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                               {[
                                 { label: 'opportunity', value: m.opportunity, color: '#c8b89a' },
-                                { label: 'recent', value: m.temperature, color: '#F0997B' },
+                                { label: '↑ recent', value: m.temperature, color: '#F0997B' },
                                 { label: 'consumer', value: m.consumerRatio, color: '#5DCAA5' },
                               ].map(metric => (
                                 <div key={metric.label}>
