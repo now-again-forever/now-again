@@ -225,7 +225,7 @@ export default function WorkspacePage() {
     const clusterPostSets = ws.selectedClusters.map(name => clusters.find(c => c.name === name)?.posts || []);
     const allClusterPosts = clusterPostSets.flat();
     return posts.map((p, i) => ({ ...p, _idx: i })).filter(p =>
-      allClusterPosts.some(cp => cp.text === p.text) && !ws.binned.includes(i)
+      allClusterPosts.some(cp => cp.text === p.text) && !ws.binned.includes(p._idx)
     );
   })() : [];
 
