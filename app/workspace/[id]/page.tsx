@@ -122,6 +122,7 @@ export default function WorkspacePage() {
   const [generating, setGenerating] = useState(false);
   const [editingBucket, setEditingBucket] = useState<string | null>(null);
   const [clusterSort, setClusterSort] = useState<'size' | 'energy' | 'temperature' | 'opportunity' | 'tension' | 'marketSpread' | 'richness'>('opportunity');
+  const [insightsPanelOpen, setInsightsPanelOpen] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const saveWs = useCallback(async (newWs: WorkspaceState) => {
@@ -416,60 +417,101 @@ export default function WorkspacePage() {
                   </button>
                 </div>
 
-                {/* DATASET INSIGHTS PANEL */}
+                {/* DATASET INSIGHTS PANEL — collapsible */}
                 {(() => {
                   const allMetrics = clusters.map(c => calcMetrics(c.posts, brief));
                   const avg = (key: string) => Math.round(allMetrics.reduce((s, m) => s + (m as any)[key], 0) / Math.max(1, allMetrics.length));
-                  const avgTension = avg('tension');
-                  const avgSpread = avg('marketSpread');
-                  const avgDepth = avg('richness');
                   const avgOnBrief = avg('brandRelevance');
-                  // Most tense cluster
-                  const mostTense = [...clusters].sort((a,b) => calcMetrics(b.posts,brief).tension - calcMetrics(a.posts,brief).tension)[0];
-                  // Most cross-market
-                  const mostSpread = [...clusters].sort((a,b) => calcMetrics(b.posts,brief).marketSpread - calcMetrics(a.posts,brief).marketSpread)[0];
-                  // Most on-brief
                   const mostRelevant = [...clusters].sort((a,b) => calcMetrics(b.posts,brief).brandRelevance - calcMetrics(a.posts,brief).brandRelevance)[0];
+
+                  // Market breakdown — posts per market
+                  const marketCounts: Record<string,number> = {};
+                  posts.forEach((p: any) => {
+                    const m = p.country;
+                    if (m && m !== 'Global' && m !== 'unknown') marketCounts[m] = (marketCounts[m] || 0) + 1;
+                  });
+                  const topMarkets = Object.entries(marketCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
+                  const maxMkt = topMarkets[0]?.[1] || 1;
+
+                  // Tension — find clusters with highest opposing sentiment
+                  const tenseClusters = [...clusters]
+                    .sort((a,b) => calcMetrics(b.posts,brief).tension - calcMetrics(a.posts,brief).tension)
+                    .slice(0, 3);
+
                   return (
-                    <div style={{ background: 'rgba(200,184,154,0.05)', border: '1px solid rgba(200,184,154,0.15)', borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
-                      <div style={{ fontSize: 9, color: '#c8b89a', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 14 }}>Dataset quick insights</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
-                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#AFA9EC', lineHeight: 1 }}>{avgTension}</span>
-                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+                    <div style={{ background: 'rgba(200,184,154,0.04)', border: '1px solid rgba(200,184,154,0.12)', borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
+                      {/* Header — always visible */}
+                      <button onClick={() => setInsightsPanelOpen(o => !o)}
+                        style={{ width: '100%', background: 'none', border: 'none', padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <span style={{ fontSize: 9, color: '#c8b89a', fontFamily: 'monospace', textTransform: 'uppercase' as const, letterSpacing: '.08em' }}>Dataset quick insights</span>
+                        {/* Teaser pills — visible when collapsed */}
+                        {!insightsPanelOpen && (
+                          <div style={{ display: 'flex', gap: 6, marginLeft: 8 }}>
+                            <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(237,147,177,0.12)', color: '#ED93B1' }}>🎯 {avgOnBrief}% on-brief</span>
+                            {topMarkets[0] && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(133,183,235,0.12)', color: '#85B7EB' }}>🌐 {topMarkets[0][0]}: {topMarkets[0][1]}</span>}
+                            {tenseClusters[0] && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(175,169,236,0.12)', color: '#AFA9EC' }}>⚡ {tenseClusters[0].name}</span>}
                           </div>
-                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>⚡️ Dataset tension</div>
-                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>Avg % of posts with conflicting views. High = unresolved cultural space.</div>
-                          {mostTense && <div style={{ fontSize: 9, color: '#AFA9EC', marginTop: 6 }}>Most tense: <em>{mostTense.name}</em></div>}
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
-                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#85B7EB', lineHeight: 1 }}>{avgSpread}</span>
-                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+                        )}
+                        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>{insightsPanelOpen ? '▲' : '▼'}</span>
+                      </button>
+
+                      {/* Expanded content */}
+                      {insightsPanelOpen && (
+                        <div style={{ padding: '4px 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
+
+                          {/* ON-BRIEF */}
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 500, color: '#ED93B1', marginBottom: 6 }}>🎯 On-brief relevance</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
+                              <span style={{ fontSize: 26, fontFamily: 'Georgia, serif', color: '#ED93B1', lineHeight: 1 }}>{avgOnBrief}</span>
+                              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100 avg across clusters</span>
+                            </div>
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5, marginBottom: 8 }}>How often brand and category terms appear. High = data is directly answering your question.</div>
+                            {mostRelevant && (
+                              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', background: 'rgba(237,147,177,0.06)', border: '1px solid rgba(237,147,177,0.12)', borderRadius: 6, padding: '5px 8px' }}>
+                                Most relevant cluster: <span style={{ color: '#ED93B1' }}>{mostRelevant.name}</span>
+                              </div>
+                            )}
                           </div>
-                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>🌐 Market spread</div>
-                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>How universal the conversations are. High = cross-market signal.</div>
-                          {mostSpread && <div style={{ fontSize: 9, color: '#85B7EB', marginTop: 6 }}>Most universal: <em>{mostSpread.name}</em></div>}
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
-                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#9FE1CB', lineHeight: 1 }}>{avgDepth}</span>
-                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+
+                          {/* MARKET BREAKDOWN */}
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 500, color: '#85B7EB', marginBottom: 6 }}>🌐 Conversations by market</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {topMarkets.map(([market, count]) => (
+                                <div key={market} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', width: 60, flexShrink: 0, fontFamily: 'monospace' }}>{market}</span>
+                                  <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
+                                    <div style={{ height: '100%', width: `${Math.round((count/maxMkt)*100)}%`, background: '#85B7EB', borderRadius: 2, opacity: 0.6 }} />
+                                  </div>
+                                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', width: 28, textAlign: 'right' }}>{count}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>📝 Conversation depth</div>
-                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>Average richness of posts. Long thoughtful posts vs short reactions.</div>
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
-                            <span style={{ fontSize: 22, fontFamily: 'Georgia, serif', color: '#ED93B1', lineHeight: 1 }}>{avgOnBrief}</span>
-                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>/ 100</span>
+
+                          {/* TENSIONS */}
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 500, color: '#AFA9EC', marginBottom: 6 }}>⚡ Most contested spaces</div>
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5, marginBottom: 8 }}>Clusters where consumers express both strongly positive and negative views — unresolved cultural spaces with the most brand opportunity.</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {tenseClusters.map((c, ci) => {
+                                const tm = calcMetrics(c.posts, brief);
+                                return (
+                                  <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div style={{ flex: 1, fontSize: 9, color: 'rgba(255,255,255,0.5)' }}>{c.name}</div>
+                                    <div style={{ width: 40, height: 3, background: 'rgba(255,255,255,0.05)', borderRadius: 2, flexShrink: 0 }}>
+                                      <div style={{ height: '100%', width: `${tm.tension}%`, background: '#AFA9EC', borderRadius: 2, opacity: 0.7 }} />
+                                    </div>
+                                    <span style={{ fontSize: 8, color: '#AFA9EC', fontFamily: 'monospace', width: 16 }}>{tm.tension}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>🎯 On-brief relevance</div>
-                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>How often brand/category terms appear. High = directly on-brief.</div>
-                          {mostRelevant && <div style={{ fontSize: 9, color: '#ED93B1', marginTop: 6 }}>Most relevant: <em>{mostRelevant.name}</em></div>}
+
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })()}
