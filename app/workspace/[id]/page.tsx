@@ -151,7 +151,6 @@ export default function WorkspacePage() {
       setPosts(b.collected_posts_full || []);
       if (b.clusters) {
         setClusters(b.clusters);
-        setTimeout(fetchTrends, 600);
       }
       if (b.workspace_state) setWs(b.workspace_state);
       setLoading(false);
@@ -182,8 +181,13 @@ export default function WorkspacePage() {
       if (bData[0]?.collected_posts_full) setPosts(bData[0].collected_posts_full);
     }
     setClustering(false);
-    fetchTrends();
   };
+
+  useEffect(() => {
+    if (clusters.length > 0 && id && Object.keys(trends).length === 0) {
+      fetchTrends();
+    }
+  }, [clusters, id]);
 
   const fetchTrends = async () => {
     if (!id) return;
