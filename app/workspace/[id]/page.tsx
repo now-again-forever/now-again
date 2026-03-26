@@ -138,6 +138,25 @@ export default function WorkspacePage() {
     }, 800);
   }, [id]);
 
+  const fetchTrends = async (briefIdOverride?: string) => {
+    const bid = briefIdOverride || id;
+    if (!bid) return;
+    setTrendsLoading(true);
+    try {
+      const res = await fetch('/api/trends', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ briefId: bid })
+      });
+      const data = await res.json();
+      if (data.success && data.trends) {
+        setTrends(data.trends);
+        console.log('Trends loaded:', Object.keys(data.trends).length, 'clusters');
+      }
+    } catch (e) { console.error('Trends failed:', e); }
+    setTrendsLoading(false);
+  };
+
   useEffect(() => {
     if (!id) return;
     const briefId = id;
@@ -187,24 +206,7 @@ export default function WorkspacePage() {
     setTimeout(() => fetchTrends(id), 500);
   };
 
-  const fetchTrends = async (briefIdOverride?: string) => {
-    const bid = briefIdOverride || id;
-    if (!bid) return;
-    setTrendsLoading(true);
-    try {
-      const res = await fetch('/api/trends', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ briefId: bid })
-      });
-      const data = await res.json();
-      if (data.success && data.trends) {
-        setTrends(data.trends);
-        console.log('Trends loaded:', Object.keys(data.trends).length, 'clusters');
-      }
-    } catch (e) { console.error('Trends failed:', e); }
-    setTrendsLoading(false);
-  };
+
 
   const updateWs = (update: Partial<WorkspaceState>) => {
     const newWs = { ...ws, ...update };
